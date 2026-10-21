@@ -29,15 +29,26 @@ function resolveScrollSettings(config) {
   return { depth, tickMin: preset.tickMin, tickMax: preset.tickMax, stepMin: preset.stepMin, stepMax: preset.stepMax };
 }
 
+// executeJavaScript không tự hết hạn: trang còn đang tải, đang hiện alert()
+// hoặc JS bị treo thì lệnh chờ mãi và làm kẹt cả vòng chạy bài.
+const SCRIPT_TIMEOUT_MS = 3000;
+
+function runScript(webContents, source, timeoutMs = SCRIPT_TIMEOUT_MS) {
+  if (webContents.isDestroyed()) return Promise.resolve();
+  let timer;
+  const timeout = new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); });
+  const run = webContents.executeJavaScript(source, true).catch(() => {});
+  return Promise.race([run, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function beginHumanScroll(webContents, config) {
   const settings = resolveScrollSettings(config);
-  if (!settings || webContents.isDestroyed()) return;
-  await webContents.executeJavaScript(scrollSource(settings), true).catch(() => {});
+  if (!settings) return;
+  await runScript(webContents, scrollSource(settings));
 }
 
 async function stopHumanScroll(webContents) {
-  if (webContents.isDestroyed()) return;
-  await webContents.executeJavaScript('window.__usaScrollStop=true;if(window.__usaScrollTimer){clearTimeout(window.__usaScrollTimer);}', true).catch(() => {});
+  await runScript(webContents, 'window.__usaScrollStop=true;if(window.__usaScrollTimer){clearTimeout(window.__usaScrollTimer);}');
 }
 
-module.exports = { beginHumanScroll, stopHumanScroll, resolveScrollSettings };
+module.exports = { beginHumanScroll, stopHumanScroll, resolveScrollSettings, runScript };

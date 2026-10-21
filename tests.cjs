@@ -175,6 +175,13 @@ test('geo data store remembers proxy article pairs',async()=>{
  assert.equal(store.pendingPairExists([proxy],['https://a.test/x']),false);
  assert.equal(store.countPairs(),1);
 });
+test('page script that never returns cannot block the article loop',async()=>{
+ const {runScript}=require('./scroll.cjs');
+ const hung={isDestroyed:()=>false,executeJavaScript:()=>new Promise(()=>{})};
+ const t=Date.now();await runScript(hung,'1',50);assert.ok(Date.now()-t<1000);
+ const failing={isDestroyed:()=>false,executeJavaScript:()=>Promise.reject(Error('gone'))};
+ await runScript(failing,'1',50);
+});
 test('fresh install seeds data from committed sample but never overwrites',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-seed-'));
  const sample=path.join(dir,'geo-proxy-data.sample.json');
