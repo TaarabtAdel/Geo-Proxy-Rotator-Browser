@@ -74,6 +74,39 @@ function isObject(v) {
 
 const LEASE_MS = 180000;
 
+// Cứu file JSON bị cắt ngang: giữ mọi phần tử đã đủ trước dấu phẩy cuối cùng
+// rồi đóng các ngoặc còn mở.
+function salvageJson(text) {
+  const stack = [];
+  let inString = false;
+  let escape = false;
+  let cut = -1;
+  let closers = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (c === '\\') escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === '{') stack.push('}');
+    else if (c === '[') stack.push(']');
+    else if (c === '}' || c === ']') stack.pop();
+    else if (c === ',' && stack.length) {
+      cut = i;
+      closers = stack.slice().reverse().join('');
+    }
+  }
+  if (cut < 0) return null;
+  try {
+    return JSON.parse(text.slice(0, cut) + closers);
+  } catch {
+    return null;
+  }
+}
+
 function summarizeDone(map) {
   const stat = { total: 0, ok: 0, bad: 0, unknown: 0, notes: {} };
   for (const list of Object.values(map || {})) {
@@ -125,11 +158,21 @@ class GeoDataStore {
 
   async _read() {
     let raw = {};
+    let text = '';
     try {
-      const text = await fs.readFile(this.file, 'utf8');
-      if (text.trim()) raw = JSON.parse(text);
+      text = await fs.readFile(this.file, 'utf8');
     } catch (e) {
       if (e.code !== 'ENOENT') throw e;
+    }
+    if (text.trim()) {
+      try {
+        raw = JSON.parse(text);
+      } catch (e) {
+        const backup = this.file.replace(/\.json$/, `.broken-${Date.now()}.json`);
+        await fs.copyFile(this.file, backup);
+        raw = salvageJson(text) || {};
+        this.recovered = { backup: path.basename(backup), error: e.message };
+      }
     }
     this.mtimeMs = await this._mtime();
     this.config = isObject(raw.config) ? raw.config : {};
@@ -164,7 +207,10 @@ class GeoDataStore {
       proxyArticleDone: this.done,
       proxyLease: this.lease,
     };
-    await fs.writeFile(this.file, JSON.stringify(payload, null, 2), 'utf8');
+    // Ghi ra file tạm rồi đổi tên: tắt app giữa chừng không làm hỏng file đang có.
+    const tmp = `${this.file}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(payload, null, 2), 'utf8');
+    await fs.rename(tmp, this.file);
     this.mtimeMs = await this._mtime();
   }
 
@@ -308,5 +354,5 @@ class GeoDataStore {
   }
 }
 
-module.exports = { GeoDataStore, articlePairKey, mergePair, summarizeDone };
+module.exports = { GeoDataStore, articlePairKey, mergePair, summarizeDone, salvageJson };
 

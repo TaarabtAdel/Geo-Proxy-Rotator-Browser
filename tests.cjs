@@ -182,6 +182,41 @@ test('page script that never returns cannot block the article loop',async()=>{
  const failing={isDestroyed:()=>false,executeJavaScript:()=>Promise.reject(Error('gone'))};
  await runScript(failing,'1',50);
 });
+test('truncated data file is backed up and salvaged instead of crashing',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-broken-'));
+ const full=JSON.stringify({version:1,proxyHealth:{'1.1.1.1:80':{status:'dead'}},proxyArticleDone:{'1.1.1.1:80':[{url:'https://a.test/',ok:true,at:1},{url:'https://b.test/',ok:false,at:2,note:'x'}]}},null,2);
+ await fs.writeFile(path.join(dir,'geo-proxy-data.json'),full.slice(0,full.lastIndexOf('"note"')));
+ const s=new GeoDataStore(dir);await s.load();
+ assert.ok(s.recovered.backup.startsWith('geo-proxy-data.broken-'));
+ assert.equal(s.isDead({type:'http',host:'1.1.1.1',port:80}),true);
+ assert.equal(s.alreadyRun({type:'http',host:'1.1.1.1',port:80},'https://a.test/'),true);
+ await s.save();JSON.parse(await fs.readFile(path.join(dir,'geo-proxy-data.json'),'utf8'));
+ assert.ok(!(await fs.readdir(dir)).some(f=>f.endsWith('.tmp')));
+});
+test('Next skips the wait, skips a loading article once, and never cascades',async()=>{
+ const {runArticles,requestNext,defaultRunnerState}=require('./tab-runner.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-next-'));
+ const store=new GeoDataStore(dir);await store.load();
+ const wc=new EventEmitter();let url='',loading=false;
+ Object.assign(wc,{id:1,isDestroyed:()=>false,isLoading:()=>loading,stop(){loading=false;},getURL:()=>url,executeJavaScript:async()=>{}});
+ const session={webRequest:{onCompleted(){},onErrorOccurred(){}}};
+ const tab={id:1,view:{webContents:wc},session,runner:defaultRunnerState()};
+ const state=tab.runner;state.running=true;
+ const links=['https://a.test/1','https://a.test/2','https://a.test/3'];
+ const hangs=new Set(['https://a.test/2']);
+ const deps={links,dataStore:store,publishPanel(){},config:{waitMinSec:30,waitMaxSec:30,articleLoadTimeoutSec:30,scrollEnabled:false},
+  loadTab(t,u){url=u;loading=true;if(!hangs.has(u))setTimeout(()=>{loading=false;wc.emit('did-stop-loading');},30);}};
+ const clicks=setInterval(()=>{if((state.phase==='waiting'&&state.articleIndex!==1)||(state.phase==='loading_article'&&state.articleIndex===1&&loading))requestNext(tab);},150);
+ const proxy={type:'http',host:'9.9.9.9',port:80};
+ const t=Date.now();
+ try{await runArticles(deps,tab,state,new AbortController().signal,proxy);}finally{clearInterval(clicks);}
+ assert.ok(Date.now()-t<10000);
+ const list=store.done['9.9.9.9:80'];
+ const get=u=>list.find(e=>e.url===u);
+ assert.equal(get('https://a.test/1').ok,true);
+ assert.equal(get('https://a.test/2').ok,false);assert.match(get('https://a.test/2').note,/Next/);
+ assert.equal(get('https://a.test/3').ok,true);
+});
 test('fresh install seeds data from committed sample but never overwrites',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-seed-'));
  const sample=path.join(dir,'geo-proxy-data.sample.json');

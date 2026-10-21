@@ -111,7 +111,7 @@ function delay(ms, signal, tab, onPoll) {
       if (signal?.aborted) { reject(signal.reason || Error('Đã dừng.')); return; }
       if (tab?.skipWait) {
         tab.skipWait = false;
-        resolve('skip');
+        resolve('next');
         return;
       }
       if (onPoll) {
@@ -131,18 +131,22 @@ function delay(ms, signal, tab, onPoll) {
 function waitPageLoad(wc, timeoutMs, signal, tab) {
   return new Promise((resolve) => {
     let done = false;
-    const finish = () => {
+    const finish = (result = 'done') => {
       if (done) return;
       done = true;
       clearTimeout(timer);
       clearInterval(poll);
       wc.removeListener('did-stop-loading', onLoad);
       if (!wc.isDestroyed()) wc.stop();
-      resolve();
+      resolve(result);
     };
     const onLoad = () => { if (!wc.isLoading()) finish(); };
     const timer = setTimeout(finish, timeoutMs);
-    const poll = setInterval(() => { if (tab?.skipWait) finish(); }, 300);
+    const poll = setInterval(() => {
+      if (!tab?.skipWait) return;
+      tab.skipWait = false;
+      finish('skip');
+    }, 300);
     if (wc.isDestroyed()) { finish(); return; }
     if (!wc.isLoading()) finish();
     else wc.on('did-stop-loading', onLoad);
@@ -278,6 +282,7 @@ async function runArticles(deps, tab, state, signal, proxy) {
 
   while (cursor < links.length) {
     if (signal.aborted || !state.running) break;
+    tab.skipWait = false;
     const url = links[cursor];
     state.articleIndex = cursor;
     state.articleLabel = shortenUrl(url);
@@ -303,11 +308,20 @@ async function runArticles(deps, tab, state, signal, proxy) {
     layoutSafe(deps);
     scheduleProbe(tab, nav, navId).catch(() => {});
 
-    await waitPageLoad(tab.view.webContents, config.articleLoadTimeoutSec * 1000, signal, tab);
+    const loadResult = await waitPageLoad(tab.view.webContents, config.articleLoadTimeoutSec * 1000, signal, tab);
     state.loadDeadline = null;
 
     const wc = tab.view.webContents;
     const wcUrl = wc.isDestroyed() ? '' : wc.getURL();
+
+    if (loadResult === 'skip') {
+      const reason = 'Next tự động: chuyển bài tiếp.';
+      await deps.dataStore.remember(proxy, url, articleOutcome({ ...nav, phase: 'loading_article' }, reason));
+      endArticleNav(nav);
+      addLog(state, 'info', reason);
+      cursor = skipDoneCursor(deps, proxy, links, cursor + 1);
+      continue;
+    }
 
     if (shouldFailProxy(nav)) {
       endArticleNav(nav);
@@ -361,7 +375,8 @@ async function runArticles(deps, tab, state, signal, proxy) {
     };
 
     try {
-      await delay(waitSec * 1000, signal, tab, waitPoll);
+      const waitResult = await delay(waitSec * 1000, signal, tab, waitPoll);
+      if (waitResult === 'next') addLog(state, 'info', 'Next tự động: bỏ qua thời gian chờ, chuyển bài tiếp.');
     } finally {
       await stopHumanScroll(wc);
     }
@@ -516,7 +531,6 @@ function requestNext(tab) {
     throw Error('Chỉ Next khi đang chờ hoặc đang tải bài.');
   }
   tab.skipWait = true;
-  addLog(state, 'info', 'Next: bỏ qua chờ / chuyển bài sớm.');
 }
 
 module.exports = {
@@ -527,4 +541,5 @@ module.exports = {
   panelSnapshot,
   stopRunner,
   requestNext,
+  runArticles,
 };
