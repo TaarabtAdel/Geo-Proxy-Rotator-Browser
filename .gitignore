@@ -19,5 +19,6 @@ npm-debug.log*
 .DS_Store
 ._*
 Thumbs.db
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/

@@ -1,11 +1,29 @@
 {
+  // Thoi gian cho ngan nhat giua 2 bai (giay). App chon ngau nhien trong khoang min - max.
   "waitMinSec": 100,
+
+  // Thoi gian cho dai nhat giua 2 bai (giay).
   "waitMaxSec": 120,
+
+  // Thoi gian toi da kiem tra ket noi proxy va gia lap vi tri (giay).
+  // Qua thoi gian nay ma proxy chua ket noi duoc thi bo qua, chuyen proxy khac.
   "proxyTimeoutSec": 15,
+
+  // Thoi gian toi da tai 1 bai (giay). Het gio thi dung tai va chuyen sang buoc cho.
   "articleLoadTimeoutSec": 60,
+
+  // Tu cuon trang nhu nguoi doc trong luc cho: true = bat, false = tat.
   "scrollEnabled": true,
+
+  // Toc do cuon: "slow" (cham), "normal" (vua), "fast" (nhanh).
   "scrollSpeed": "normal",
+
+  // Cuon toi bao nhieu % chieu dai trang (tu 50 den 100).
   "scrollDepthPercent": 95,
+
+  // Hien chua dung: het cap proxy - bai thi app tu dung.
   "loop": false,
+
+  // Hien chua dung: so tab tu mo. Bam nut + de mo them tab, moi tab chay 1 proxy rieng.
   "parallelTabs": 5
 }

@@ -32,15 +32,44 @@ function normalizeConfig(raw) {
   return c;
 }
 
+// Bỏ chú thích // và /* */ (ngoài chuỗi) để geo-config.json ghi được giải thích.
+function stripJsonComments(text) {
+  let out = '';
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      out += c;
+      if (c === '\\') { out += text[++i] ?? ''; continue; }
+      if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') { inString = true; out += c; continue; }
+    if (c === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      out += '\n';
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    out += c;
+  }
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
 async function loadRotatorConfig(baseDir) {
   const file = path.join(baseDir, 'geo-config.json');
   try {
     const text = await fs.readFile(file, 'utf8');
-    return normalizeConfig(JSON.parse(text));
+    return normalizeConfig(JSON.parse(stripJsonComments(text)));
   } catch (e) {
     if (e.code === 'ENOENT') return normalizeConfig({});
     throw e;
   }
 }
 
-module.exports = { DEFAULTS, normalizeConfig, loadRotatorConfig };
+module.exports = { DEFAULTS, normalizeConfig, loadRotatorConfig, stripJsonComments };

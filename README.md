@@ -73,6 +73,8 @@ Mỗi dòng một URL `http`/`https`. Mỗi proxy sẽ chạy lần lượt từ
 | `scrollSpeed` | `normal` | `slow` / `normal` / `fast` |
 | `scrollDepthPercent` | 95 | Cuộn tới bao nhiêu % chiều dài trang (50 đến 100) |
 
+Mỗi khóa trong file đều có dòng chú thích `//` giải thích. Có thể sửa hoặc thêm chú thích thoải mái, app vẫn đọc được. Hai khóa `loop` và `parallelTabs` hiện chưa có tác dụng.
+
 Sửa xong thì khởi động lại app.
 
 ### `geo-proxy-data.json`: lịch sử chạy

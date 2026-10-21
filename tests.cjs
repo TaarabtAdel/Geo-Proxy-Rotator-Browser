@@ -217,6 +217,12 @@ test('Next skips the wait, skips a loading article once, and never cascades',asy
  assert.equal(get('https://a.test/2').ok,false);assert.match(get('https://a.test/2').note,/Next/);
  assert.equal(get('https://a.test/3').ok,true);
 });
+test('geo-config.json may contain comments and still loads',async()=>{
+ const {stripJsonComments,loadRotatorConfig}=require('./rotator-config.cjs');
+ assert.deepEqual(JSON.parse(stripJsonComments('{\n // a\n "u": "http://x//y", /* b */ "n": 1,\n}')),{u:'http://x//y',n:1});
+ const c=await loadRotatorConfig(__dirname);
+ assert.equal(c.waitMinSec,100);assert.equal(c.scrollSpeed,'normal');assert.equal(c.articleLoadTimeoutSec,60);
+});
 test('fresh install seeds data from committed sample but never overwrites',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-seed-'));
  const sample=path.join(dir,'geo-proxy-data.sample.json');
