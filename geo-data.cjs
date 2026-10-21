@@ -332,7 +332,8 @@ class GeoDataStore {
   }
 
   // Giống trang Cài đặt của extension: thống kê cặp + tình trạng proxy trong list.
-  stats(candidates, isInUse) {
+  // leaseStatus(id) trả về 'checking' (tab đang kiểm tra), 'using' (tab đang chạy bài) hoặc null.
+  stats(candidates, leaseStatus) {
     const list = candidates || [];
     if (!this._stats || this._stats.rev !== this.rev || this._stats.n !== list.length) {
       const buckets = new Map();
@@ -344,10 +345,12 @@ class GeoDataStore {
       }
       this._stats = { rev: this.rev, n: list.length, buckets, counts, done: summarizeDone(this.done) };
     }
-    const counts = { ...this._stats.counts, inUse: 0 };
+    const counts = { ...this._stats.counts, inUse: 0, checking: 0 };
     for (const p of list) {
-      if (!isInUse || !isInUse(p.id)) continue;
-      counts.inUse += 1;
+      const status = leaseStatus ? leaseStatus(p.id) : null;
+      if (!status) continue;
+      if (status === 'checking') counts.checking += 1;
+      else counts.inUse += 1;
       counts[this._stats.buckets.get(p.id)] -= 1;
     }
     return { total: list.length, ...counts, done: this._stats.done };

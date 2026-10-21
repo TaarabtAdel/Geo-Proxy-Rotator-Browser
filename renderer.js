@@ -56,6 +56,7 @@ function renderStats(stats) {
     ['Chưa thử', stats.untried, ''],
     ['Không', stats.dead, 'dead'],
     ['Bận', stats.busy, ''],
+    ['Đang kiểm tra', stats.checking, ''],
     ['Đang dùng', stats.inUse, ''],
     ['Live', stats.live, 'live'],
   ];

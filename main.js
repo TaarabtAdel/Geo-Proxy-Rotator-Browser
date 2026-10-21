@@ -25,7 +25,7 @@ const ASIDE_W = 360;
 const emit = (name, data) => { if (uiReady && win && !win.isDestroyed()) win.webContents.send(name, data); };
 
 function snapshot(tab) {
-  const stats = geoData ? geoData.stats(candidates, (id) => lease.has(id)) : null;
+  const stats = geoData ? geoData.stats(candidates, (id) => lease.status(id)) : null;
   return { ...panelSnapshot(tab, listInfo.message), stats };
 }
 

@@ -65,11 +65,11 @@ function addLog(state, level, message) {
   if (state.logs.length > 80) state.logs.length = 80;
 }
 
-function sleep(ms, state) {
+function sleep(ms, alive) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const tick = () => {
-      if (state && !state.running) { reject(Error('Đã dừng.')); return; }
+      if (alive && !alive()) { reject(Error('Đã dừng.')); return; }
       if (Date.now() - start >= ms) { resolve(); return; }
       setTimeout(tick, 200);
     };
@@ -150,7 +150,8 @@ function waitPageLoad(wc, timeoutMs, signal, tab) {
     if (wc.isDestroyed()) { finish(); return; }
     if (!wc.isLoading()) finish();
     else wc.on('did-stop-loading', onLoad);
-    signal?.addEventListener('abort', finish, { once: true });
+    if (signal?.aborted) { finish('abort'); return; }
+    signal?.addEventListener('abort', () => finish('abort'), { once: true });
   });
 }
 
@@ -193,15 +194,22 @@ async function acquireProxy(deps, tab, state, signal) {
   const picked = proxyCandidatesForTab(deps, tab);
   if (picked.skippedDead) addLog(state, 'info', `Bỏ qua ${picked.skippedDead} proxy trạng thái Không (dead).`);
   if (picked.skippedDone) addLog(state, 'info', `Bỏ qua ${picked.skippedDone} proxy đã chạy hết bài.`);
-  if (picked.skippedBusy) addLog(state, 'info', `Bỏ qua ${picked.skippedBusy} proxy đang bận ở tab khác.`);
+  if (picked.skippedBusy) addLog(state, 'info', `Bỏ qua ${picked.skippedBusy} proxy đang được tab khác kiểm tra/dùng.`);
   if (!picked.order.length) {
     if (picked.skippedBusy) throw new NoProxyError('Proxy còn bài đang bận ở tab khác. Thử lại sau 20 giây.', true);
     throw new NoProxyError('Không còn proxy để thử. Proxy dead bị bỏ qua, proxy khác đã chạy hết bài.', false);
   }
   let lastErr = '';
-  for (const { item, idx } of picked.order.slice(0, 36)) {
+  let tried = 0;
+  for (const { item, idx } of picked.order) {
+    if (tried >= 36) break;
     if (signal.aborted || !state.running) throw signal.reason || Error('Đã dừng.');
-    if (!deps.lease.isAvailable(item.id, tab.id)) continue;
+    // Danh sách được lọc từ trước; trong lúc tab này thử proxy khác, tab khác có thể đã giữ hoặc đánh dead proxy này.
+    if (!deps.lease.isAvailable(item.id, tab.id) || deps.dataStore.isDead(item)) continue;
+    deps.lease.release(tab.id);
+    deps.lease.lease(item.id, tab.id, 'checking');
+    tab.leasedProxyId = item.id;
+    tried += 1;
     const location = pickLocation();
     addLog(state, 'info', `Proxy ${idx + 1}/${deps.candidates.length}: ${item.host}:${item.port}`);
     state.phase = 'applying_proxy';
@@ -221,8 +229,7 @@ async function acquireProxy(deps, tab, state, signal) {
     deps.publishPanel(tab);
     try {
       await deps.connectTab(tab, { ...item, id: item.id, skipGeo: true }, signal, false);
-      deps.lease.lease(item.id, tab.id);
-      tab.leasedProxyId = item.id;
+      deps.lease.lease(item.id, tab.id, 'using');
       tab.currentProxy = item;
       state.checkDeadline = null;
       state.proxyIndex = idx;
@@ -256,6 +263,10 @@ async function acquireProxy(deps, tab, state, signal) {
       deps.lease.release(tab.id);
       tab.leasedProxyId = null;
       tab.currentProxy = null;
+      state.checkDeadline = null;
+      state.spoofDeadline = null;
+      // Dừng hoặc đóng tab giữa chừng không phải lỗi proxy: không đánh dead, không đếm lỗi.
+      if (signal.aborted || !state.running || tab.closing) throw signal.reason || e;
       await deps.dataStore.setHealth(item, 'dead', { note: e.message || String(e) }).catch(() => {});
       lastErr = e.message || String(e);
       state.checkDeadline = null;
@@ -266,6 +277,7 @@ async function acquireProxy(deps, tab, state, signal) {
       deps.publishPanel(tab);
     }
   }
+  if (!tried) throw new NoProxyError('Proxy còn bài đang được tab khác kiểm tra/dùng. Thử lại sau 20 giây.', true);
   throw Error(lastErr || 'Không tìm được proxy hoạt động.');
 }
 
@@ -310,6 +322,10 @@ async function runArticles(deps, tab, state, signal, proxy) {
 
     const loadResult = await waitPageLoad(tab.view.webContents, config.articleLoadTimeoutSec * 1000, signal, tab);
     state.loadDeadline = null;
+    if (loadResult === 'abort' || signal.aborted) {
+      endArticleNav(nav);
+      throw signal.reason || Error('Đã dừng.');
+    }
 
     const wc = tab.view.webContents;
     const wcUrl = wc.isDestroyed() ? '' : wc.getURL();
@@ -405,30 +421,45 @@ async function cleanupSession(tab, deps, state) {
   if (deps.publish) deps.publish();
 }
 
-async function runTabLoop(deps, tab) {
+// Dừng rồi bấm Chạy lại ngay: vòng cũ có thể còn đang dọn dẹp. Vòng mới chờ vòng cũ xong
+// và mỗi vòng có số thế hệ riêng, để vòng cũ không chạy tiếp hay tắt nhầm vòng mới.
+function runTabLoop(deps, tab) {
   const state = tab.runner || (tab.runner = defaultRunnerState());
-  if (state.running) return;
-  await deps.dataStore.load();
+  if (state.running) return tab.runnerLoop || Promise.resolve();
   state.running = true;
-  state.articleTotal = deps.links.length;
-  state.proxyTotal = deps.candidates.length;
-  state.donePairs = deps.dataStore.countPairs();
-  tab.proxyCursor = tab.proxyCursor || 0;
-  tab.skipWait = false;
+  const gen = (tab.runGen || 0) + 1;
+  tab.runGen = gen;
+  const prev = tab.runnerLoop;
+  const job = (async () => {
+    if (prev) await prev.catch(() => {});
+    await tabLoop(deps, tab, state, gen);
+  })();
+  tab.runnerLoop = job;
+  job.catch(() => {}).finally(() => { if (tab.runnerLoop === job) tab.runnerLoop = null; });
+  return job;
+}
 
-  if (!deps.dataStore.pendingPairExists(deps.candidates, deps.links, { skipDead: true })) {
-    addLog(state, 'info', 'Mọi cặp proxy–bài đã chạy (hoặc proxy còn lại đều dead). Xoá geo-proxy-data.json để chạy lại.');
-    state.running = false;
-    state.phase = 'idle';
-    deps.publishPanel(tab);
-    return;
-  }
-
-  addLog(state, 'info', `Tab ${tab.id}: 1 proxy → ${deps.links.length} link → đổi proxy (${state.donePairs} cặp đã lưu).`);
-  deps.publishPanel(tab);
-
+async function tabLoop(deps, tab, state, gen) {
+  const alive = () => state.running && tab.runGen === gen && !tab.closing;
   try {
-    while (state.running && !tab.closing) {
+    if (!alive()) return;
+    await deps.dataStore.load();
+    if (!alive()) return;
+    state.articleTotal = deps.links.length;
+    state.proxyTotal = deps.candidates.length;
+    state.donePairs = deps.dataStore.countPairs();
+    tab.proxyCursor = tab.proxyCursor || 0;
+    tab.skipWait = false;
+
+    if (!deps.dataStore.pendingPairExists(deps.candidates, deps.links, { skipDead: true })) {
+      addLog(state, 'info', 'Mọi cặp proxy–bài đã chạy (hoặc proxy còn lại đều dead). Xoá geo-proxy-data.json để chạy lại.');
+      return;
+    }
+
+    addLog(state, 'info', `Tab ${tab.id}: 1 proxy → ${deps.links.length} link → đổi proxy (${state.donePairs} cặp đã lưu).`);
+    deps.publishPanel(tab);
+
+    while (alive()) {
       if (!deps.dataStore.pendingPairExists(deps.candidates, deps.links, { skipDead: true })) {
         addLog(state, 'success', 'Đã chạy hết cặp proxy–bài (proxy dead bị bỏ qua).');
         break;
@@ -444,7 +475,7 @@ async function runTabLoop(deps, tab) {
           passOk = true;
         });
       } catch (e) {
-        if (e.name === 'AbortError' && !state.running) break;
+        if (!alive()) break;
         if (e.name === 'NoProxyError') {
           addLog(state, 'info', e.message);
           deps.publishPanel(tab);
@@ -466,7 +497,7 @@ async function runTabLoop(deps, tab) {
       } finally {
         await cleanupSession(tab, deps, state);
       }
-      if (!state.running || tab.closing) break;
+      if (!alive()) break;
       if (passOk || forceSwitch) {
         advanceProxyCursor(tab, state.proxyIndex, deps.candidates.length);
         const switchMs = deps.config.proxyTimeoutSec * 1000;
@@ -477,30 +508,35 @@ async function runTabLoop(deps, tab) {
           : 0;
         addLog(state, 'info', `Chuyển proxy kế (${nextIdx + 1}/${deps.candidates.length}).`);
         deps.publishPanel(tab);
-        await sleep(Math.min(switchMs, 1500), state);
+        await sleep(Math.min(switchMs, 1500), alive);
         state.switchDeadline = null;
       } else if (retryMs) {
         state.phase = 'switching';
         state.switchDeadline = Date.now() + retryMs;
         deps.publishPanel(tab);
-        await sleep(retryMs, state);
+        await sleep(retryMs, alive);
         state.switchDeadline = null;
       } else {
         state.phase = 'switching';
         addLog(state, 'info', 'Lô proxy vừa thử đều lỗi · thử lô kế.');
         deps.publishPanel(tab);
-        await sleep(1000, state);
+        await sleep(1000, alive);
       }
     }
+  } catch (e) {
+    if (alive()) throw e;
   } finally {
-    state.running = false;
-    state.phase = 'idle';
-    state.checkDeadline = null;
-    state.loadDeadline = null;
-    state.nextArticleAt = null;
-    state.donePairs = deps.dataStore.countPairs();
-    deps.lease.release(tab.id);
     await cleanupSession(tab, deps, state);
+    if (tab.runGen === gen) {
+      state.running = false;
+      state.phase = 'idle';
+      state.checkDeadline = null;
+      state.loadDeadline = null;
+      state.spoofDeadline = null;
+      state.switchDeadline = null;
+      state.nextArticleAt = null;
+      state.donePairs = deps.dataStore.countPairs();
+    }
     deps.publishPanel(tab);
   }
 }
@@ -542,4 +578,5 @@ module.exports = {
   stopRunner,
   requestNext,
   runArticles,
+  acquireProxy,
 };

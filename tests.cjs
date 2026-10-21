@@ -251,6 +251,29 @@ test('geo data file uses extension format and merge rules',async()=>{
  const q=saved.proxyArticleDone['1.2.3.4:8080'].find(e=>typeof e==='object');
  assert.equal(q.url,'https://a.test/q');assert.equal(q.ok,true);assert.equal(typeof q.at,'number');
 });
+test('tabs never check the same proxy at once and stopping mid-check does not mark it dead',async()=>{
+ const {acquireProxy,defaultRunnerState}=require('./tab-runner.cjs');
+ const {ProxyLease}=require('./proxy-lease.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-lease-'));
+ const store=new GeoDataStore(dir);await store.load();
+ const candidates=[1,2,3].map(n=>({id:'p'+n,type:'http',host:'10.0.0.'+n,port:80}));
+ const lease=new ProxyLease();const checking=new Map();
+ const deps={candidates,lease,dataStore:store,links:['https://a.test/'],config:{proxyTimeoutSec:5},
+  ensureLists:async()=>{},publishPanel(){},
+  connectTab:(tab,p,signal)=>new Promise((_,reject)=>{checking.set(tab.id,p.id);signal.addEventListener('abort',()=>reject(signal.reason),{once:true});})};
+ const mk=id=>({id,proxySlot:0,proxyCursor:0,runner:Object.assign(defaultRunnerState(),{running:true})});
+ const a=mk(1),b=mk(2),ca=new AbortController(),cb=new AbortController();
+ const ra=acquireProxy(deps,a,a.runner,ca.signal),rb=acquireProxy(deps,b,b.runner,cb.signal);
+ await new Promise(r=>setTimeout(r,600));
+ assert.equal(checking.get(1),'p1');assert.equal(checking.get(2),'p2');
+ assert.equal(lease.status('p1'),'checking');assert.equal(lease.status('p2'),'checking');
+ const statsNow=store.stats(candidates,id=>lease.status(id));assert.equal(statsNow.checking,2);
+ ca.abort();cb.abort();
+ await assert.rejects(ra);await assert.rejects(rb);
+ assert.equal(store.isDead(candidates[0]),false);assert.equal(store.isDead(candidates[1]),false);
+ assert.equal(lease.has('p1'),false);assert.equal(lease.has('p2'),false);
+ assert.equal(a.runner.failedCount,0);
+});
 test('reload pauses on disconnect and cannot fire after disable or close',()=>{
  const a=reloadHarness(),b=reloadHarness();a.r.setEnabled(true);b.r.setEnabled(true);
  a.setAvailable(false);assert.equal(a.timers.size,0);assert.equal(b.timers.size,1);
