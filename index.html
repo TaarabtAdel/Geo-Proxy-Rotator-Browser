@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Geo Proxy Rotator Browser</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><strong>Geo Proxy Rotator Browser</strong><small>Mỗi tab · 1 proxy bận · hết list-link rồi đổi proxy</small></div>
+    <div class="pill" id="badge">Sẵn sàng</div>
+  </header>
+  <div class="tabstrip"><div id="tabs" role="tablist"></div><button id="newTab" type="button" title="Tab mới">+</button></div>
+  <nav class="nav">
+    <button type="button" class="nav-btn" data-action="back">Lui</button>
+    <button type="button" class="nav-btn" data-action="forward">Tới</button>
+    <button type="button" class="nav-btn" data-action="reload">Tải lại</button>
+    <form id="addressForm"><input id="address" placeholder="Xem URL tab (tự mở từ list-link.txt)"><button type="submit">Mở</button></form>
+  </nav>
+  <aside class="sidebar">
+    <header class="side-head">
+      <div><h1>Tab <span id="sideTabId">—</span></h1><p>Geo Proxy Rotator</p></div>
+      <button id="reloadLists" type="button" class="ghost">Đọc lại list</button>
+    </header>
+    <p id="phase" class="phase idle">Sẵn sàng</p>
+    <div class="actions">
+      <button id="start" type="button">Bắt đầu</button>
+      <button id="nextAuto" type="button" class="ghost" disabled>Next bài</button>
+      <button id="stop" type="button" class="danger" disabled>Dừng</button>
+    </div>
+    <dl class="stats">
+      <div><dt>Proxy hiện tại</dt><dd id="proxy">—</dd></div>
+      <div><dt>IP / quốc gia</dt><dd id="ipLine">—</dd></div>
+      <div><dt>Vị trí giả lập</dt><dd id="location">—</dd></div>
+      <div><dt>Bài viết</dt><dd id="article" title="">—</dd></div>
+      <div><dt id="countdownLabel">Còn lại</dt><dd id="countdown">—</dd></div>
+      <div><dt>Proxy lỗi</dt><dd id="failed">0</dd></div>
+    </dl>
+    <p id="listsHint" class="hint"></p>
+    <section><h2>Tình trạng proxy</h2><div id="proxyStatus" class="chips"></div></section>
+    <section><h2>Cặp proxy–bài đã chạy</h2><p id="doneHint" class="hint done"></p></section>
+    <section><h2>Nhật ký tab này</h2><ol id="logs"></ol></section>
+    <p id="message" class="message" role="status"></p>
+  </aside>
+  <main><div class="placeholder"><p>Tab tự lấy proxy (không trùng tab khác) → mở lần lượt <strong>list-link.txt</strong> → đổi proxy → lặp.</p></div></main>
+  <script src="renderer.js"></script>
+</body>
+</html>

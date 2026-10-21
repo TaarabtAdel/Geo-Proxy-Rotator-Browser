@@ -1,0 +1,95 @@
+GEO PROXY ROTATOR BROWSER — MỖI TAB IP / VỊ TRÍ / PHIÊN ĐĂNG NHẬP RIÊNG
+Windows 10/11 64-bit | Mã nguồn + công cụ chạy/đóng gói
+
+TỰ TẢI LẠI NGẪU NHIÊN — V6.1
+- Chọn tab, bật ô Tự tải lại tab này (ngẫu nhiên) ở cột trái.
+- Mỗi lượt chọn một trong đúng 8 khoảng: 1, 2, 3, 4, 5, 6, 7, 8 phút.
+  Có thể chọn trùng khoảng chờ của lượt trước.
+- Đếm từ lúc trang tải xong. Không chồng lệnh tải khi trang đang tải.
+- Hiện đếm ngược theo phút và giây; bật/tắt riêng từng tab; mặc định tắt ở tab mới.
+- Chuyển tab hoặc thu nhỏ cửa sổ không tắt lịch. Máy ngủ/tắt app thì không chạy.
+- Khi mất kết nối hoặc đang xử lý proxy, lịch tạm chờ. Khi sẵn sàng sẽ chọn
+  lại thời gian. Đóng tab/tắt tính năng hủy lịch của tab đó.
+- Tải lại không tự đổi IP hoặc vị trí của tab; nội dung chưa lưu trên trang
+  có thể mất như khi bạn bấm tải lại thủ công.
+
+CÁCH CHẠY
+1. Giải nén vào thư mục mới. Cài Node.js LTS từ https://nodejs.org nếu chưa có.
+2. Một lần trong thư mục dự án: npm install (cần Internet).
+3. Windows: start.bat — macOS/Linux: ./start.sh hoặc npm start.
+4. Tab đầu đọc list-proxy.txt và mở link trong list-link.txt.
+5. Bấm + hoặc Ctrl+T để mở tab mới. Tab mới có phiên cookie, proxy và vị trí
+   riêng, tự thử tìm IP Hoa Kỳ chưa được tab khác sử dụng lúc kiểm tra.
+6. Mỗi tab mới được gán lần lượt một thành phố trong danh sách 25 thành phố.
+   Chọn tab rồi đổi mục Thành phố mô phỏng để chọn vị trí khác cho riêng tab đó.
+7. Mọi nút ở cột trái chỉ áp dụng cho tab đang chọn: Tự thử proxy,
+   Ngắt tab này, Kiểm tra IP, chọn proxy, nhập proxy riêng, đổi vị trí.
+8. Khi thao tác đang chạy bạn vẫn chuyển sang tab khác được. Tác vụ tiếp tục
+   thuộc tab khởi tạo nó, không chuyển sang tab mới đang chọn.
+9. Tên tab có dòng IP đầu ra và thành phố mô phỏng để phân biệt.
+
+IP RIÊNG HOẠT ĐỘNG THẾ NÀO
+- Mỗi tab có một phiên Chromium riêng trong bộ nhớ, chứa proxy, cookie,
+  localStorage, bộ nhớ đệm, thông tin xác thực proxy riêng.
+- Ứng dụng đo IP bằng HTTPS qua proxy, chỉ chấp nhận country_code US.
+- So sánh IP đầu ra, không chỉ so sánh host/cổng proxy. Nếu hai proxy cho
+  cùng IP, tab đang kết nối sau sẽ bị từ chối và tự tìm tiếp (ở chế độ tự động).
+- Có cơ chế giữ chỗ IP khi nhiều tab kết nối đồng thời, tránh nhận trùng kết quả.
+- IP được đo khi kết nối và khi bấm Kiểm tra IP. Proxy xoay có thể đổi IP giữa
+  hai lần kiểm tra; không cam kết mọi thời điểm các IP đều khác nhau.
+- Nếu kiểm tra lại phát hiện IP trùng tab khác hoặc không xác minh được US,
+  chỉ tab đó bị dừng. Không chuyển ngầm về kết nối Internet trực tiếp.
+- Cần đủ proxy Mỹ hoạt động và có IP đầu ra khác nhau để kết nối nhiều tab.
+  Thiếu proxy thì một số tab sẽ chưa kết nối; bấm Tự tìm IP riêng để thử tiếp.
+- Bấm Ngắt tab này không ngắt tab khác. Đóng tab sẽ xóa dữ liệu phiên tab đó.
+- Khi proxy lỗi, chỉ tab bị lỗi tự thử tìm lại, giới hạn một lần mỗi phút/tab.
+
+VỊ TRÍ RIÊNG
+25 lựa chọn: New York, Los Angeles, Chicago, Dallas, Miami, Seattle,
+San Francisco, Las Vegas, Washington DC, Boston, Houston, Austin, San Diego,
+San Jose, Phoenix, Denver, Atlanta, Orlando, Philadelphia, Portland,
+Detroit, Minneapolis, Nashville, Honolulu, Anchorage.
+Vị trí này là tọa độ Geolocation mô phỏng. Nó không đổi GPS Windows, không
+quyết định thành phố của IP và không tự đổi múi giờ của máy.
+Đổi vị trí chỉ tải lại tab đang chọn; nên lưu biểu mẫu đang nhập trước.
+
+TAB VÀ ĐĂNG NHẬP
+Ctrl+T mở tab; Ctrl+W đóng; Ctrl+Tab / Ctrl+Shift+Tab chuyển tab; Ctrl+L chọn
+thanh địa chỉ. Chuột giữa hoặc × đóng tab. Tối đa 30 tab.
+Liên kết mở cửa sổ mới / chuột phải mở trong tab mới tạo một phiên độc lập.
+Do cookie không chia sẻ, tab mới không tự có tài khoản đã đăng nhập ở tab cũ.
+Một số luồng đăng nhập bằng cửa sổ bật lên có thể không hoạt động với cách tách này.
+Đóng tab/đóng app sẽ mất phiên đăng nhập của tab. V6.1 không có hồ sơ lưu lâu dài.
+Cấu hình proxy đang gõ được giữ riêng từng tab khi chuyển tab, chỉ trong bộ nhớ.
+Ô nhớ host/cổng lưu mẫu không có mật khẩu và chỉ điền vào tab đầu lần mở sau.
+
+NGUỒN PROXY
+Danh sách tự cập nhật từ Databay và Proxifly, gộp và bỏ trùng.
+https://github.com/databay-labs/free-proxy-list
+https://github.com/proxifly/free-proxy-list
+Danh sách chung tải qua kết nối Internet hiện tại; các phiên duyệt web độc lập.
+Mỗi nguồn lấy tối đa 3.000 ứng viên, danh sách chọn hiển thị tối đa 200 dòng
+ưu tiên kết quả kiểm tra của tab đang chọn. Tự tìm xét toàn bộ danh sách.
+Mỗi tab thử tối đa 36 ứng viên/lượt, 2 kết nối thử đồng thời. Kiểm tra một
+proxy chờ tối đa 10 giây; kiểm tra cuối trong phiên duyệt chờ tối đa 12 giây.
+Bấm Dừng tìm chỉ hủy tác vụ của tab, không hủy tải danh sách chung đang dùng
+cho các tab khác. Dịch vụ miễn phí có thể giới hạn truy cập hoặc mất kết nối.
+Không có máy chủ VPN riêng; không phải VPN toàn hệ điều hành.
+Không tắt kiểm tra chứng chỉ TLS. Không cam kết ẩn danh tuyệt đối.
+
+ĐÓNG GÓI (tùy chọn)
+Chạy npm run dist — bộ cài Windows nằm trong dist (cần electron-builder).
+Electron 44.7.0 / electron-builder 26.15.3; kèm package-lock.json.
+Chưa hỗ trợ tải tệp, extension, camera/mic, thông báo, DRM, trình quản lý mật khẩu.
+
+KIỂM TRA
+25 kiểm tra tự động đạt, bao gồm:
+- Vị trí riêng từng tab, lỗi vị trí không thay vị trí tab khác.
+- Hai phiên cấu hình proxy riêng; ngắt/đóng/hủy một tab không ngắt tab khác.
+- IP trùng lúc kết nối đồng thời; IP trùng khi kiểm tra lại; chuẩn hóa IPv6.
+- Đóng phiên xóa dữ liệu đúng phiên; xác thực proxy chỉ cấp cho đúng host.
+- Các kiểm tra nguồn proxy, chống URL đặc quyền, hủy tìm và giới hạn đồng thời.
+Các kiểm tra dùng phiên mô phỏng để xác minh logic; chưa phải thử nghiệm
+kết nối nhiều proxy thật. Chưa kiểm thử giao diện và kết nối trên Windows.
+Ở các bản trước đã tải được nguồn danh sách nhưng không kết nối thành công
+với các proxy thử trong môi trường tạo. Cần thử trên mạng Windows của bạn.

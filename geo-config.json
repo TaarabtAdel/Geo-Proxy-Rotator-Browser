@@ -1,0 +1,11 @@
+{
+  "waitMinSec": 100,
+  "waitMaxSec": 120,
+  "proxyTimeoutSec": 15,
+  "articleLoadTimeoutSec": 60,
+  "scrollEnabled": true,
+  "scrollSpeed": "normal",
+  "scrollDepthPercent": 95,
+  "loop": false,
+  "parallelTabs": 5
+}

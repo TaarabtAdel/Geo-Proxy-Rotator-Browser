@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output (electron-builder)
+dist/
+out/
+
+# Runtime data
+geo-proxy-data.json
+*.crswap
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+._*
+Thumbs.db
+.vscode/
+.idea/

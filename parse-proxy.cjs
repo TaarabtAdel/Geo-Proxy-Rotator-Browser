@@ -1,0 +1,96 @@
+// Parser dùng chung (từ Geo-Proxy-Rotator): ip:port, ip:port:user:pass, scheme://host:port
+
+function isIPv4(host) {
+  const parts = host.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+}
+
+function isHostname(host) {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(host);
+}
+
+function normalizeProtocol(value) {
+  const protocol = String(value || 'http').toLowerCase();
+  if (protocol === 'https' || protocol === 'http') return 'http';
+  if (protocol === 'socks4' || protocol === 'socks5') return protocol;
+  return '';
+}
+
+function parseProxyLine(line) {
+  let raw = String(line || '').trim();
+  if (!raw || raw.startsWith('#')) return null;
+  let protocol = 'http';
+  const scheme = raw.match(/^([a-z][a-z0-9+.-]*):\/\//i);
+  if (scheme) {
+    protocol = normalizeProtocol(scheme[1]);
+    if (!protocol) return null;
+    raw = raw.slice(scheme[0].length);
+  }
+  raw = raw.split('/')[0].trim();
+  const parts = raw.split(':');
+  if (parts.length !== 2 && parts.length < 4) return null;
+  const host = parts[0].trim();
+  const port = Number(parts[1]);
+  if ((!isIPv4(host) && !isHostname(host)) || !Number.isInteger(port) || port < 1 || port > 65535) {
+    return null;
+  }
+  const proxy = { host, port, protocol };
+  if (parts.length >= 4) {
+    proxy.username = parts[2];
+    proxy.password = parts.slice(3).join(':');
+    if (!proxy.username) return null;
+  }
+  return proxy;
+}
+
+function proxyKey(proxy) {
+  const protocol = normalizeProtocol(proxy.protocol) || 'http';
+  const base = proxy.host + ':' + proxy.port;
+  const auth = proxy.username ? ':' + proxy.username : '';
+  const key = protocol === 'http' ? base + auth : protocol + '://' + base + auth;
+  return key;
+}
+
+function parseProxySource(input) {
+  const text = String(input || '').trim();
+  let entries = [];
+  if (text.startsWith('[') || text.startsWith('{')) {
+    try {
+      const data = JSON.parse(text);
+      const list = Array.isArray(data) ? data : (data.data || data.proxies || []);
+      entries = Array.isArray(list)
+        ? list.map((item) => {
+            if (typeof item === 'string') return parseProxyLine(item);
+            if (!item || typeof item !== 'object') return null;
+            const protocol = normalizeProtocol(item.protocol || 'http');
+            if (!protocol) return null;
+            const host = item.ip || item.host;
+            if (!host || item.port == null || item.port === '') return null;
+            return parseProxyLine((protocol === 'http' ? '' : protocol + '://') + host + ':' + item.port);
+          })
+        : [];
+    } catch {
+      entries = text.split(/\r?\n/).filter((line) => String(line || '').trim() && !String(line).trim().startsWith('#')).map(parseProxyLine);
+    }
+  } else {
+    entries = text.split(/\r?\n/).filter((line) => String(line || '').trim() && !String(line).trim().startsWith('#')).map(parseProxyLine);
+  }
+
+  const proxies = [];
+  const seen = new Set();
+  let skipped = 0;
+  for (const proxy of entries) {
+    if (!proxy) {
+      skipped += 1;
+      continue;
+    }
+    const key = proxyKey(proxy);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    proxies.push(proxy);
+  }
+  return { proxies, skipped };
+}
+
+module.exports = { parseProxyLine, parseProxySource, proxyKey, normalizeProtocol };

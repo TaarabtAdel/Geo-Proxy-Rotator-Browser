@@ -1,0 +1,59 @@
+{
+  "name": "geo-proxy-rotator-browser",
+  "version": "6.1.0",
+  "description": "Geo Proxy Rotator Browser - moi tab mot proxy, gia lap vi tri USA",
+  "author": "Manh Linh",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests.cjs",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.manhlinh.geoproxyrotatorbrowser",
+    "productName": "Geo Proxy Rotator Browser",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "core.cjs",
+      "index.html",
+      "style.css",
+      "free-proxies.cjs",
+      "parse-proxy.cjs",
+      "local-lists.cjs",
+      "tabs.cjs",
+      "tab-network.cjs",
+      "verify.cjs",
+      "auto-reload.cjs",
+      "parse-proxy.cjs",
+      "local-lists.cjs",
+      "rotator.cjs",
+      "rotator-config.cjs",
+      "done-store.cjs",
+      "geo-data.cjs",
+      "article-flow.cjs",
+      "tab-runner.cjs",
+      "proxy-lease.cjs",
+      "scroll.cjs",
+      "geo-spoof.cjs",
+      "us-locations.cjs",
+      "geo-config.json",
+      "list-proxy.txt",
+      "list-link.txt"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}
