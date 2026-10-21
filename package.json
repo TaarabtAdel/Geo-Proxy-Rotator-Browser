@@ -44,6 +44,7 @@
       "geo-spoof.cjs",
       "us-locations.cjs",
       "geo-config.json",
+      "geo-proxy-data.sample.json",
       "list-proxy.txt",
       "list-link.txt"
     ],

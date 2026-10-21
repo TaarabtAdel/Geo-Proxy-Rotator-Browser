@@ -247,6 +247,7 @@ app.whenReady().then(async () => {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   runnerConfig = await loadRotatorConfig(appRoot);
   geoData = new GeoDataStore(appRoot);
+  await geoData.seedFrom(path.join(appRoot, 'geo-proxy-data.sample.json'));
   await geoData.load();
   tabs = new BrowserTabs({
     cities: Object.keys(cities),

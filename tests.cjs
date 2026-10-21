@@ -175,6 +175,16 @@ test('geo data store remembers proxy article pairs',async()=>{
  assert.equal(store.pendingPairExists([proxy],['https://a.test/x']),false);
  assert.equal(store.countPairs(),1);
 });
+test('fresh install seeds data from committed sample but never overwrites',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-seed-'));
+ const sample=path.join(dir,'geo-proxy-data.sample.json');
+ await fs.writeFile(sample,JSON.stringify({version:1,proxyArticleDone:{'1.2.3.4:80':['https://a.test/']}}));
+ const store=new GeoDataStore(dir);
+ assert.equal(await store.seedFrom(sample),true);await store.load();assert.equal(store.countPairs(),1);
+ await store.remember({type:'http',host:'5.5.5.5',port:80},'https://b.test/',{ok:true});
+ assert.equal(await store.seedFrom(sample),false);await store.load();assert.equal(store.countPairs(),2);
+ assert.equal(await new GeoDataStore(path.join(dir,'none')).seedFrom(path.join(dir,'missing.json')),false);
+});
 test('geo data file uses extension format and merge rules',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'usa-geo-'));
  const file=path.join(dir,'geo-proxy-data.json');

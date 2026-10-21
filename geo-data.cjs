@@ -184,6 +184,17 @@ class GeoDataStore {
     });
   }
 
+  // Máy mới clone từ git chưa có geo-proxy-data.json thì lấy dữ liệu mẫu đã commit.
+  async seedFrom(sampleFile) {
+    try {
+      await fs.copyFile(sampleFile, this.file, fs.constants.COPYFILE_EXCL);
+      return true;
+    } catch (e) {
+      if (e.code === 'EEXIST' || e.code === 'ENOENT') return false;
+      throw e;
+    }
+  }
+
   load() {
     return this._enqueue(() => this._read());
   }
