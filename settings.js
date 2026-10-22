@@ -261,6 +261,7 @@ function readSync() {
   return {
     mode: $('modeHost').checked ? 'host' : 'local',
     url: $('syncUrl').value,
+    userId: $('syncUserId').value,
     key: $('syncKey').value,
   };
 }
@@ -278,7 +279,7 @@ function renderSyncState(r) {
 }
 
 let syncDirty = false;
-for (const id of ['syncUrl', 'syncKey']) $(id).addEventListener('input', () => { syncDirty = true; });
+for (const id of ['syncUrl', 'syncUserId', 'syncKey']) $(id).addEventListener('input', () => { syncDirty = true; });
 for (const id of ['modeLocal', 'modeHost']) $(id).addEventListener('change', () => { syncDirty = true; });
 
 async function loadSync() {
@@ -287,6 +288,7 @@ async function loadSync() {
     $('modeHost').checked = r.sync.mode === 'host';
     $('modeLocal').checked = r.sync.mode !== 'host';
     setVal('syncUrl', r.sync.url);
+    setVal('syncUserId', r.sync.userId);
     setVal('syncKey', r.sync.key);
   }
   renderSyncState(r);
@@ -296,7 +298,7 @@ $('syncTest').addEventListener('click', async () => {
   $('syncHint').textContent = 'Đang kiểm tra…';
   try {
     const { server: s } = await call('syncTest', readSync());
-    $('syncHint').textContent = `Kết nối OK. Máy chủ có ${s.health} proxy có trạng thái (${s.dead} Không), `
+    $('syncHint').textContent = `Kết nối OK (user ${s.userId}). Máy chủ có ${s.health} proxy có trạng thái (${s.dead} Không), `
       + `${s.done} cặp proxy–bài, ${s.leases} chỗ đang giữ, ${s.hasConfig ? 'đã có' : 'chưa có'} cài đặt.`;
   } catch (e) {
     $('syncHint').textContent = e.message;

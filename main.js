@@ -79,7 +79,7 @@ async function loadLists() {
   runnerConfig = r.runnerConfig;
   listStamp = configStamp(geoData.config);
   const from = syncClient
-    ? `Host ${syncConfig.url} · IP máy ${publicIp || 'không rõ'}`
+    ? `Host ${syncConfig.url} · user ${syncConfig.userId} · IP máy ${publicIp || 'không rõ'}`
     : 'Local ' + [...new Set([r.proxySource, r.linkSource].filter(Boolean))].join(' + ');
   listInfo = {
     source: from,
@@ -513,7 +513,7 @@ ipcMain.handle('settings', async (event, action, payload) => {
     if (action === 'syncSave') {
       const c = await saveSyncConfig(dataDir, payload);
       const changed = (c.mode === 'host') !== Boolean(syncClient)
-        || (syncClient && (c.url !== syncConfig.url || c.key !== syncConfig.key));
+        || (syncClient && (c.url !== syncConfig.url || c.userId !== syncConfig.userId || c.key !== syncConfig.key));
       if (changed) {
         const choice = dialog.showMessageBoxSync(settingsWin, {
           type: 'question',

@@ -12,6 +12,7 @@ function normalizeSyncConfig(raw) {
   return {
     mode: c.mode === 'host' || (c.mode === undefined && c.enabled === true) ? 'host' : 'local',
     url: String(c.url || '').trim().replace(/\/+$/, ''),
+    userId: String(c.userId || '').trim(),
     key: String(c.key || '').trim(),
     installId,
   };
@@ -70,10 +71,11 @@ class SyncOfflineError extends Error {
 
 // Gọi POST {url}/api/geo-sync lần lượt từng lệnh, để "trả proxy" luôn tới trước "giữ proxy mới".
 class SyncClient {
-  constructor({ url, key, machine, fetcher, timeoutMs = 20000 }) {
+  constructor({ url, userId, key, machine, fetcher, timeoutMs = 20000 }) {
     if (!/^https?:\/\//i.test(url || '')) throw Error('URL máy chủ đồng bộ phải bắt đầu bằng http:// hoặc https://');
+    if (!userId) throw Error('Thiếu ID user auto-post.');
     if (!key) throw Error('Thiếu khoá đồng bộ.');
-    Object.assign(this, { url: url.replace(/\/+$/, ''), key, machine, fetcher, timeoutMs });
+    Object.assign(this, { url: url.replace(/\/+$/, ''), userId, key, machine, fetcher, timeoutMs });
     this.queue = Promise.resolve();
     this.online = null;
     this.lastError = '';
@@ -85,7 +87,7 @@ class SyncClient {
       try {
         res = await this.fetcher(this.url + '/api/geo-sync', {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-geo-sync-key': this.key },
+          headers: { 'content-type': 'application/json', 'x-geo-user-id': this.userId, 'x-geo-sync-key': this.key },
           body: JSON.stringify({ ...payload, action }),
           signal: AbortSignal.timeout(this.timeoutMs),
         });

@@ -32,8 +32,17 @@
       <p class="hint">Chế độ Host: proxy, bài viết, lịch sử và cài đặt dùng chung. Máy chủ giữ chỗ từng proxy nên tab ở các máy không bao giờ dùng trùng proxy hay trùng IP. Mỗi máy được nhận diện bằng IP public lúc mở app (kèm 4 ký tự riêng của máy, để hai máy chung mạng không bị coi là một). Theo dõi và sửa cài đặt cả trên web: <code>{máy chủ}/geo</code>. Khoá chỉ lưu trên máy này (<code>private-data/sync.json</code>).</p>
       <label for="syncUrl">Địa chỉ máy chủ</label>
       <input id="syncUrl" type="url" placeholder="http://14.225.83.208:3100" spellcheck="false">
-      <label for="syncKey">Khoá đồng bộ (GEO_SYNC_KEY trên máy chủ)</label>
-      <input id="syncKey" type="password" autocomplete="off" spellcheck="false">
+      <div class="grid">
+        <label>
+          ID user auto-post
+          <input id="syncUserId" type="text" autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          Khoá đồng bộ của user
+          <input id="syncKey" type="password" autocomplete="off" spellcheck="false">
+        </label>
+      </div>
+      <p class="hint">Lấy ID user và khoá ở trang <code>{máy chủ}/geo</code> sau khi đăng nhập auto-post (mục Kết nối app). Mỗi user auto-post có dữ liệu riêng.</p>
       <div class="row spread">
         <span>
           <button id="syncTest" type="button" class="ghost">Kiểm tra kết nối</button>

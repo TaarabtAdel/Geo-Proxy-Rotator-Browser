@@ -364,7 +364,7 @@ function fakeGeoSyncServer(){
   updateConfig:b=>{config={...config,...b.patch};return{ok:true,config};},
   pull:()=>({ok:true,full:true,seq:log.length,config,proxyHealth:health,proxyArticleDone:done,leases:live()}),
  };
- const fetcher=async(url,opts)=>{const b=JSON.parse(opts.body);if(opts.headers['x-geo-sync-key']!=='k')return{ok:false,status:401,json:async()=>({error:'Sai khoá đồng bộ.'})};
+ const fetcher=async(url,opts)=>{const b=JSON.parse(opts.body);if(opts.headers['x-geo-user-id']!=='u1'||opts.headers['x-geo-sync-key']!=='k')return{ok:false,status:401,json:async()=>({error:'Sai ID user hoặc khoá đồng bộ.'})};
   return{ok:true,status:200,json:async()=>handlers[b.action](b)};};
  return {fetcher,leases,log};
 }
@@ -373,7 +373,7 @@ test('host mode: two machines never check the same proxy and share health throug
  const {acquireProxy,defaultRunnerState}=require('./tab-runner.cjs');
  const srv=fakeGeoSyncServer();
  const candidates=[1,2,3,4].map(n=>({id:'10.9.0.'+n+':80',type:'http',host:'10.9.0.'+n,port:80,user:'',password:''}));
- const machine=async name=>{const client=new SyncClient({url:'http://h',key:'k',machine:name,fetcher:srv.fetcher});
+ const machine=async name=>{const client=new SyncClient({url:'http://h',userId:'u1',key:'k',machine:name,fetcher:srv.fetcher});
   const store=new RemoteGeoDataStore(client,name);await store.load();const lease=new RemoteProxyLease(client,name);const checking=new Map();
   return {store,lease,checking,deps:{candidates,lease,dataStore:store,links:['https://a.test/'],config:{proxyTimeoutSec:5},ensureLists:async()=>{},publishPanel(){},
    connectTab:(tab,p,signal)=>new Promise((_,reject)=>{checking.set(tab.id,p.id);signal.addEventListener('abort',()=>reject(signal.reason),{once:true});})}};};
@@ -400,7 +400,9 @@ test('data mode is local unless host is chosen; old enabled flag still means hos
  assert.equal(normalizeSyncConfig({mode:'host'}).mode,'host');
  assert.equal(normalizeSyncConfig({enabled:true}).mode,'host');
  assert.equal(normalizeSyncConfig({mode:'local',enabled:true}).mode,'local');
- const {machineId}=require('./sync-client.cjs');
+ const {machineId,SyncClient}=require('./sync-client.cjs');
+ assert.equal(normalizeSyncConfig({userId:' abc '}).userId,'abc');
+ assert.throws(()=>new SyncClient({url:'http://h',key:'k',fetcher:fetch}),/ID user/);
  assert.match(normalizeSyncConfig({}).installId,/^[0-9a-f]{4}$/);
  assert.equal(normalizeSyncConfig({installId:'a3f9'}).installId,'a3f9');
  assert.equal(normalizeSyncConfig({machine:'old-name'}).machine,undefined);

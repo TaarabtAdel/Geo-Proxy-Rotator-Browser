@@ -68,7 +68,8 @@ Chọn trong **Cài đặt → Chế độ đọc dữ liệu**, rồi khởi đ
 - Mất mạng tới máy chủ: tab không xin proxy mới (chờ 20 giây rồi thử lại), kết quả đã chạy được giữ lại và gửi khi có mạng.
 - Theo dõi và sửa cài đặt trên web: `{máy chủ}/geo` (đăng nhập auto-post).
 - Mỗi máy được nhận diện bằng **IP public lúc mở app** cộng 4 ký tự riêng của bản cài (ví dụ `113.161.5.20-a3f9`), để hai máy chung một mạng (cùng IP) không bị coi là một máy.
-- Địa chỉ máy chủ và khoá (`GEO_SYNC_KEY` trong `.env` của auto-post) lưu ở `private-data/sync.json`, không lên git.
+- Dữ liệu tách theo **user auto-post**. App nhập **ID user** và **khoá đồng bộ** của user đó, lấy ở trang `{máy chủ}/geo` (mục Kết nối app) sau khi đăng nhập. Các máy của cùng một user dùng chung dữ liệu và không trùng proxy; user khác có dữ liệu riêng.
+- Địa chỉ máy chủ, ID user và khoá lưu ở `private-data/sync.json`, không lên git.
 - Lần đầu: bấm **Đẩy dữ liệu máy này lên máy chủ** để đưa lịch sử và trạng thái proxy hiện có lên.
 
 ## Các file cấu hình
