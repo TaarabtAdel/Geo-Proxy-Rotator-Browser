@@ -262,7 +262,6 @@ function readSync() {
     mode: $('modeHost').checked ? 'host' : 'local',
     url: $('syncUrl').value,
     key: $('syncKey').value,
-    machine: $('syncMachine').value,
   };
 }
 
@@ -273,12 +272,13 @@ function renderSyncState(r) {
       : 'Đang chạy Local.';
     return;
   }
-  const state = r.online === false ? `Host: mất kết nối máy chủ (${r.lastError}).` : 'Đang chạy Host, đồng bộ với máy chủ.';
+  const state = (r.online === false ? `Host: mất kết nối máy chủ (${r.lastError}).` : 'Đang chạy Host, đồng bộ với máy chủ.')
+    + ` Máy này: ${r.machine}.`;
   $('syncHint').textContent = state + (r.pending ? ` ${r.pending} thay đổi chờ gửi.` : '');
 }
 
 let syncDirty = false;
-for (const id of ['syncUrl', 'syncKey', 'syncMachine']) $(id).addEventListener('input', () => { syncDirty = true; });
+for (const id of ['syncUrl', 'syncKey']) $(id).addEventListener('input', () => { syncDirty = true; });
 for (const id of ['modeLocal', 'modeHost']) $(id).addEventListener('change', () => { syncDirty = true; });
 
 async function loadSync() {
@@ -288,7 +288,6 @@ async function loadSync() {
     $('modeLocal').checked = r.sync.mode !== 'host';
     setVal('syncUrl', r.sync.url);
     setVal('syncKey', r.sync.key);
-    setVal('syncMachine', r.sync.machine);
   }
   renderSyncState(r);
 }

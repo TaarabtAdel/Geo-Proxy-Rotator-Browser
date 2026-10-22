@@ -400,7 +400,12 @@ test('data mode is local unless host is chosen; old enabled flag still means hos
  assert.equal(normalizeSyncConfig({mode:'host'}).mode,'host');
  assert.equal(normalizeSyncConfig({enabled:true}).mode,'host');
  assert.equal(normalizeSyncConfig({mode:'local',enabled:true}).mode,'local');
- assert.equal(normalizeSyncConfig({machine:'Máy nhà #1'}).machine,'Máy-nhà-1');
+ const {machineId}=require('./sync-client.cjs');
+ assert.match(normalizeSyncConfig({}).installId,/^[0-9a-f]{4}$/);
+ assert.equal(normalizeSyncConfig({installId:'a3f9'}).installId,'a3f9');
+ assert.equal(normalizeSyncConfig({machine:'old-name'}).machine,undefined);
+ assert.equal(machineId('113.161.5.20','a3f9'),'113.161.5.20-a3f9');
+ assert.notEqual(machineId('1.2.3.4',normalizeSyncConfig({}).installId),machineId('1.2.3.4','ffff'));
 });
 test('reload pauses on disconnect and cannot fire after disable or close',()=>{
  const a=reloadHarness(),b=reloadHarness();a.r.setEnabled(true);b.r.setEnabled(true);

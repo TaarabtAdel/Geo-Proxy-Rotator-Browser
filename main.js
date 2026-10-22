@@ -12,7 +12,7 @@ const { resolveLists, configStamp } = settings;
 const { ProxyLease } = require('./proxy-lease.cjs');
 const { runTabLoop, panelSnapshot, stopRunner, requestNext, defaultRunnerState } = require('./tab-runner.cjs');
 const { GeoDataStore } = require('./geo-data.cjs');
-const { SyncClient, loadSyncConfig, saveSyncConfig, normalizeSyncConfig } = require('./sync-client.cjs');
+const { SyncClient, loadSyncConfig, saveSyncConfig, normalizeSyncConfig, machineId, detectPublicIp } = require('./sync-client.cjs');
 const { RemoteGeoDataStore, RemoteProxyLease } = require('./remote-store.cjs');
 
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
@@ -28,6 +28,8 @@ const registry = new IPRegistry();
 let lease = new ProxyLease();
 let syncConfig = null;
 let syncClient = null;
+let publicIp = '';
+let machine = '';
 const runId = randomUUID();
 const ASIDE_W = 360;
 
@@ -77,7 +79,7 @@ async function loadLists() {
   runnerConfig = r.runnerConfig;
   listStamp = configStamp(geoData.config);
   const from = syncClient
-    ? `Host ${syncConfig.url} · máy ${syncConfig.machine}`
+    ? `Host ${syncConfig.url} · IP máy ${publicIp || 'không rõ'}`
     : 'Local ' + [...new Set([r.proxySource, r.linkSource].filter(Boolean))].join(' + ');
   listInfo = {
     source: from,
@@ -318,8 +320,10 @@ app.whenReady().then(async () => {
 async function openDataStore() {
   syncConfig = await loadSyncConfig(dataDir);
   if (syncConfig.mode === 'host') {
-    syncClient = new SyncClient({ ...syncConfig, fetcher: (url, opts) => net.fetch(url, opts) });
-    const remote = new RemoteGeoDataStore(syncClient, syncConfig.machine);
+    publicIp = await detectPublicIp((url, opts) => net.fetch(url, opts));
+    machine = machineId(publicIp, syncConfig.installId);
+    syncClient = new SyncClient({ ...syncConfig, machine, fetcher: (url, opts) => net.fetch(url, opts) });
+    const remote = new RemoteGeoDataStore(syncClient, machine);
     for (;;) {
       try {
         await remote.load();
@@ -344,7 +348,7 @@ async function openDataStore() {
     }
     if (syncClient) {
       geoData = remote;
-      lease = new RemoteProxyLease(syncClient, syncConfig.machine);
+      lease = new RemoteProxyLease(syncClient, machine);
       await lease.start();
       return;
     }
@@ -481,6 +485,7 @@ ipcMain.handle('settings', async (event, action, payload) => {
         ok: true,
         sync: await loadSyncConfig(dataDir),
         active: Boolean(syncClient),
+        machine,
         online: syncClient ? syncClient.online : null,
         lastError: syncClient ? syncClient.lastError : '',
         pending: syncClient ? geoData.outbox.length : 0,
@@ -508,7 +513,7 @@ ipcMain.handle('settings', async (event, action, payload) => {
     if (action === 'syncSave') {
       const c = await saveSyncConfig(dataDir, payload);
       const changed = (c.mode === 'host') !== Boolean(syncClient)
-        || (syncClient && (c.url !== syncConfig.url || c.key !== syncConfig.key || c.machine !== syncConfig.machine));
+        || (syncClient && (c.url !== syncConfig.url || c.key !== syncConfig.key));
       if (changed) {
         const choice = dialog.showMessageBoxSync(settingsWin, {
           type: 'question',

@@ -1,32 +1,56 @@
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
+const { randomBytes } = require('node:crypto');
 
 const SYNC_FILE = 'sync.json';
 
-function defaultMachine() {
-  return os.hostname().replace(/\.local$/i, '').replace(/[^\p{L}\p{N}_.-]+/gu, '-').slice(0, 40) || 'may';
-}
-
 // mode 'local': đọc / ghi private-data/geo-proxy-data.json. 'host': đọc / ghi qua API auto-post.
+// installId: 4 ký tự cố định của bản cài này, ghép sau IP để hai máy chung IP (cùng mạng) không bị coi là một.
 function normalizeSyncConfig(raw) {
   const c = raw && typeof raw === 'object' ? raw : {};
+  const installId = /^[0-9a-f]{4}$/.test(String(c.installId || '')) ? c.installId : randomBytes(2).toString('hex');
   return {
     mode: c.mode === 'host' || (c.mode === undefined && c.enabled === true) ? 'host' : 'local',
     url: String(c.url || '').trim().replace(/\/+$/, ''),
     key: String(c.key || '').trim(),
-    machine: String(c.machine || '').trim().replace(/[^\p{L}\p{N}_.-]+/gu, '-').slice(0, 40) || defaultMachine(),
+    installId,
   };
 }
 
-// Cấu hình đồng bộ riêng từng máy (khoá, tên máy), không nằm trong dữ liệu dùng chung.
-async function loadSyncConfig(dataDir) {
-  try {
-    return normalizeSyncConfig(JSON.parse(await fs.readFile(path.join(dataDir, SYNC_FILE), 'utf8')));
-  } catch (e) {
-    if (e.code === 'ENOENT') return normalizeSyncConfig({});
-    throw e;
+// Tên máy trên máy chủ = IP public lúc mở app + installId, ví dụ 113.161.5.20-a3f9.
+function machineId(ip, installId) {
+  return `${ip || 'khong-ro-ip'}-${installId}`;
+}
+
+// Gọi thẳng (không qua proxy của tab) để lấy IP public của máy lúc mở app.
+async function detectPublicIp(fetcher) {
+  const services = [
+    ['https://api.ipify.org?format=json', (d) => d.ip],
+    ['https://ipwho.is/', (d) => d.ip],
+  ];
+  for (const [url, pick] of services) {
+    try {
+      const res = await fetcher(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const ip = String(pick(await res.json()) || '').trim();
+      if (/^[0-9a-f.:]+$/i.test(ip)) return ip;
+    } catch { /* thử dịch vụ kế */ }
   }
+  return '';
+}
+
+// Cấu hình đồng bộ riêng từng máy (khoá, installId), không nằm trong dữ liệu dùng chung.
+// Lần đầu chưa có installId thì tạo và ghi lại để giữ cố định.
+async function loadSyncConfig(dataDir) {
+  let raw = null;
+  try {
+    raw = JSON.parse(await fs.readFile(path.join(dataDir, SYNC_FILE), 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  const c = normalizeSyncConfig(raw);
+  if (!raw || raw.installId !== c.installId) await saveSyncConfig(dataDir, c);
+  return c;
 }
 
 async function saveSyncConfig(dataDir, config) {
@@ -94,4 +118,12 @@ class SyncClient {
   }
 }
 
-module.exports = { SyncClient, SyncOfflineError, loadSyncConfig, saveSyncConfig, normalizeSyncConfig, defaultMachine };
+module.exports = {
+  SyncClient,
+  SyncOfflineError,
+  loadSyncConfig,
+  saveSyncConfig,
+  normalizeSyncConfig,
+  machineId,
+  detectPublicIp,
+};

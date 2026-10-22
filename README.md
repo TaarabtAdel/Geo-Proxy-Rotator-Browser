@@ -58,7 +58,7 @@ Chọn trong **Cài đặt → Chế độ đọc dữ liệu**, rồi khởi đ
 | Chế độ | Dữ liệu nằm ở | Dùng khi |
 |---|---|---|
 | **Local** (mặc định) | `private-data/geo-proxy-data.json` trên máy này | Chạy một máy |
-| **Host** | Máy chủ auto-post, qua API `/api/geo-sync` | Nhiều máy cùng chạy (ví dụ nhà 30 tab + công ty 20 tab) |
+| **Host** | Máy chủ auto-post, qua API `/api/geo-sync` | Nhiều máy cùng chạy, cộng dồn số tab |
 
 Ở chế độ Host:
 
@@ -67,7 +67,8 @@ Chọn trong **Cài đặt → Chế độ đọc dữ liệu**, rồi khởi đ
 - Mỗi máy gia hạn chỗ giữ mỗi phút. Máy tắt đột ngột thì proxy tự được trả sau 3 phút.
 - Mất mạng tới máy chủ: tab không xin proxy mới (chờ 20 giây rồi thử lại), kết quả đã chạy được giữ lại và gửi khi có mạng.
 - Theo dõi và sửa cài đặt trên web: `{máy chủ}/geo` (đăng nhập auto-post).
-- Địa chỉ máy chủ, khoá (`GEO_SYNC_KEY` trong `.env` của auto-post) và tên máy lưu ở `private-data/sync.json`, không lên git. Mỗi máy đặt **tên máy khác nhau**.
+- Mỗi máy được nhận diện bằng **IP public lúc mở app** cộng 4 ký tự riêng của bản cài (ví dụ `113.161.5.20-a3f9`), để hai máy chung một mạng (cùng IP) không bị coi là một máy.
+- Địa chỉ máy chủ và khoá (`GEO_SYNC_KEY` trong `.env` của auto-post) lưu ở `private-data/sync.json`, không lên git.
 - Lần đầu: bấm **Đẩy dữ liệu máy này lên máy chủ** để đưa lịch sử và trạng thái proxy hiện có lên.
 
 ## Các file cấu hình
