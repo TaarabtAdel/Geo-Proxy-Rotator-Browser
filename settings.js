@@ -265,6 +265,7 @@ function readSync() {
     userId: $('syncUserId').value,
     key: $('syncKey').value,
     allowRemoteShutdown: $('syncAllowShutdown').checked,
+    autoShutdownLowUntried: $('autoShutdownLowUntried').checked,
   };
 }
 
@@ -285,16 +286,21 @@ for (const id of ['syncUrl', 'syncUserId', 'syncKey']) $(id).addEventListener('i
 for (const id of ['modeLocal', 'modeHost']) $(id).addEventListener('change', () => { syncDirty = true; });
 
 // Không cần khởi động lại: lưu ngay khi tick, không phụ thuộc nút «Lưu chế độ».
-$('syncAllowShutdown').addEventListener('change', async () => {
-  const allow = $('syncAllowShutdown').checked;
-  try {
-    const current = await call('syncLoad');
-    await call('syncSave', { ...current.sync, allowRemoteShutdown: allow });
-    setStatus(allow ? 'Đã bật cho phép tắt máy từ /geo.' : 'Đã tắt cho phép tắt máy từ /geo.', false);
-  } catch {
-    $('syncAllowShutdown').checked = !allow;
-  }
-});
+function autoSaveCheckbox(id, key, onText, offText) {
+  $(id).addEventListener('change', async () => {
+    const value = $(id).checked;
+    try {
+      const current = await call('syncLoad');
+      await call('syncSave', { ...current.sync, [key]: value });
+      setStatus(value ? onText : offText, false);
+    } catch {
+      $(id).checked = !value;
+    }
+  });
+}
+autoSaveCheckbox('syncAllowShutdown', 'allowRemoteShutdown', 'Đã bật cho phép tắt máy từ /geo.', 'Đã tắt cho phép tắt máy từ /geo.');
+autoSaveCheckbox('autoShutdownLowUntried', 'autoShutdownLowUntried',
+  'Đã bật tự động tắt máy khi Chưa thử dưới 100.', 'Đã tắt tự động tắt máy.');
 
 async function loadSync() {
   const r = await call('syncLoad');
@@ -304,6 +310,7 @@ async function loadSync() {
     setVal('syncUrl', r.sync.url);
     setVal('syncUserId', r.sync.userId);
     $('syncAllowShutdown').checked = r.sync.allowRemoteShutdown === true;
+    $('autoShutdownLowUntried').checked = r.sync.autoShutdownLowUntried === true;
     setVal('syncKey', r.sync.key);
   }
   renderSyncState(r);

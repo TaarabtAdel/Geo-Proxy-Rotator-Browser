@@ -17,6 +17,8 @@ function normalizeSyncConfig(raw) {
     installId,
     // Máy tự đồng ý cho trang /geo gửi lệnh tắt máy; mặc định không.
     allowRemoteShutdown: c.allowRemoteShutdown === true,
+    // Tự tắt máy khi Chưa thử dưới 100 (kể cả hết hẳn) — cài đặt riêng máy này, dùng cả Local lẫn Host.
+    autoShutdownLowUntried: c.autoShutdownLowUntried === true,
   };
 }
 

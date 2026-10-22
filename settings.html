@@ -59,6 +59,15 @@
     </section>
 
     <section>
+      <h2>Tự động tắt máy</h2>
+      <label class="check">
+        <input id="autoShutdownLowUntried" type="checkbox">
+        Tự động tắt máy khi hết proxy Chưa thử hoặc Chưa thử dưới 100 (lưu ngay khi tick)
+      </label>
+      <p class="hint">Chỉ xét khi có tab đang chạy. Điều kiện phải kéo dài liên tục 5 phút (để /geo kịp chuyển link dự phòng), sau đó app đếm 60 giây (có nút Huỷ), dừng tab, trả proxy rồi tắt máy. Bấm Huỷ thì app không hỏi lại cho tới khi Chưa thử lên lại từ 100. Dùng được cả Local lẫn Host; cài đặt riêng máy này.</p>
+    </section>
+
+    <section>
       <h2>Danh sách proxy</h2>
       <label for="sourceUrl">URL nguồn proxy USA (mỗi dòng một nguồn)</label>
       <div class="row">

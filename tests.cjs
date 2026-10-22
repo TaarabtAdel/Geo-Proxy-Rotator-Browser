@@ -438,6 +438,9 @@ test('shutdown runs the right OS command and reports errors',async()=>{
  const {normalizeSyncConfig}=require('./sync-client.cjs');
  assert.equal(normalizeSyncConfig({}).allowRemoteShutdown,false);
  assert.equal(normalizeSyncConfig({allowRemoteShutdown:true}).allowRemoteShutdown,true);
+ assert.equal(normalizeSyncConfig({}).autoShutdownLowUntried,false);
+ assert.equal(normalizeSyncConfig({autoShutdownLowUntried:true}).autoShutdownLowUntried,true);
+ assert.equal(normalizeSyncConfig({autoShutdownLowUntried:'yes'}).autoShutdownLowUntried,false);
 });
 test('host pull sends machine presence and hands commands to the app',async()=>{
  const {SyncClient}=require('./sync-client.cjs');const {RemoteGeoDataStore}=require('./remote-store.cjs');

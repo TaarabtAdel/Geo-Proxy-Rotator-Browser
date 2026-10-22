@@ -313,7 +313,10 @@ app.whenReady().then(async () => {
   setInterval(() => {
     ensureLists()
       .catch((e) => { listInfo.message = e.message; })
-      .finally(() => publishPanel(tabs?.active));
+      .finally(() => {
+        publishPanel(tabs?.active);
+        checkAutoShutdown();
+      });
   }, 5000);
 }).catch((e) => { dialog.showErrorBox('Geo Proxy Rotator Browser', e.message); app.exit(1); });
 
@@ -427,34 +430,72 @@ async function handleShutdown(cmd) {
     await ackCommand(cmd, 'canceled', 'Đang đếm ngược lệnh tắt trước.');
     return;
   }
+  const r = await shutdownWithCountdown('Tắt máy từ xa', 'Trang /geo yêu cầu tắt máy này.', () => ackCommand(cmd, 'done'));
+  if (r === 'canceled') await ackCommand(cmd, 'canceled', 'Người dùng trên máy bấm Huỷ.');
+  else if (r !== 'done') await ackCommand(cmd, 'failed', r);
+}
+
+// Đếm 60 giây (có nút Huỷ), dừng tab, trả proxy, gửi nốt dữ liệu rồi tắt máy.
+// beforeShutdown: chạy ngay trước lệnh tắt (báo /geo). Trả 'done' | 'canceled' | thông báo lỗi.
+async function shutdownWithCountdown(title, message, beforeShutdown) {
   shutdownPending = true;
   try {
     const parent = win && !win.isDestroyed() ? win : undefined;
     const ask = dialog.showMessageBox(parent, {
       type: 'warning',
-      title: 'Tắt máy từ xa',
-      message: 'Trang /geo yêu cầu tắt máy này.',
+      title,
+      message,
       detail: `Máy sẽ tắt sau ${SHUTDOWN_COUNTDOWN_MS / 1000} giây: các tab dừng, proxy được trả về máy chủ rồi tắt máy.\nBấm Huỷ để giữ máy chạy.`,
       buttons: ['Tắt ngay', 'Huỷ'],
       defaultId: 0,
       cancelId: 1,
     }).then((r) => (r.response === 1 ? 'cancel' : 'now'));
     const timeout = new Promise((r) => setTimeout(() => r('timeout'), SHUTDOWN_COUNTDOWN_MS));
-    if (await Promise.race([ask, timeout]) === 'cancel') {
-      await ackCommand(cmd, 'canceled', 'Người dùng trên máy bấm Huỷ.');
-      return;
-    }
+    if (await Promise.race([ask, timeout]) === 'cancel') return 'canceled';
     await stopEverythingForShutdown();
-    await ackCommand(cmd, 'done');
+    await beforeShutdown?.();
     try {
       await runShutdown();
+      return 'done';
     } catch (e) {
-      await ackCommand(cmd, 'failed', e.message);
-      dialog.showErrorBox('Tắt máy từ xa', `Không tắt được máy: ${e.message}`);
+      dialog.showErrorBox(title, `Không tắt được máy: ${e.message}`);
+      return e.message;
     }
   } finally {
     shutdownPending = false;
   }
+}
+
+// Cài đặt máy này: tự tắt máy khi Chưa thử dưới ngưỡng (kể cả hết hẳn) trong khi tab đang chạy.
+// Chờ đủ AUTO_SHUTDOWN_GRACE_MS liên tục trước khi đếm 60 giây: /geo có thể vừa chuyển link dự phòng
+// (Chưa thử tăng lại), hoặc danh sách đang được nạp lại. Bấm Huỷ thì không hỏi lại cho tới khi Chưa thử lên lại.
+const AUTO_SHUTDOWN_UNTRIED = 100;
+const AUTO_SHUTDOWN_GRACE_MS = 5 * 60000;
+let lowUntriedSince = 0;
+let autoShutdownDeclined = false;
+
+function checkAutoShutdown() {
+  if (!syncConfig?.autoShutdownLowUntried || shutdownPending || reloadPending || !geoData || !candidates.length) {
+    lowUntriedSince = 0;
+    return;
+  }
+  const running = (tabs?.items || []).some((t) => t.runner?.running);
+  const untried = geoData.stats(candidates, (id) => lease.status(id), links).untried;
+  if (!running || untried >= AUTO_SHUTDOWN_UNTRIED) {
+    lowUntriedSince = 0;
+    autoShutdownDeclined = false;
+    return;
+  }
+  if (autoShutdownDeclined) return;
+  if (!lowUntriedSince) { lowUntriedSince = Date.now(); return; }
+  if (Date.now() - lowUntriedSince < AUTO_SHUTDOWN_GRACE_MS) return;
+  lowUntriedSince = 0;
+  const reason = untried
+    ? `Proxy Chưa thử còn ${untried} (dưới ${AUTO_SHUTDOWN_UNTRIED}) trong ${AUTO_SHUTDOWN_GRACE_MS / 60000} phút.`
+    : `Đã hết proxy Chưa thử trong ${AUTO_SHUTDOWN_GRACE_MS / 60000} phút.`;
+  shutdownWithCountdown('Tự động tắt máy', reason)
+    .then((r) => { if (r === 'canceled') autoShutdownDeclined = true; })
+    .catch(() => {});
 }
 
 async function stopEverythingForShutdown() {
@@ -623,7 +664,9 @@ ipcMain.handle('settings', async (event, action, payload) => {
     if (action === 'syncSave') {
       // Form không có installId: giữ nguyên các khoá đã lưu, nếu không máy bị đổi tên trên /geo sau khi lưu.
       const c = await saveSyncConfig(dataDir, { ...(await loadSyncConfig(dataDir)), ...payload });
-      if (syncConfig) syncConfig = { ...syncConfig, allowRemoteShutdown: c.allowRemoteShutdown };
+      if (syncConfig) {
+        syncConfig = { ...syncConfig, allowRemoteShutdown: c.allowRemoteShutdown, autoShutdownLowUntried: c.autoShutdownLowUntried };
+      }
       const changed = (c.mode === 'host') !== Boolean(syncClient)
         || (syncClient && (c.url !== syncConfig.url || c.userId !== syncConfig.userId || c.key !== syncConfig.key));
       if (changed) {
