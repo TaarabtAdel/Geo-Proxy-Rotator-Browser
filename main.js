@@ -12,6 +12,8 @@ const { resolveLists, configStamp } = settings;
 const { ProxyLease } = require('./proxy-lease.cjs');
 const { runTabLoop, panelSnapshot, stopRunner, requestNext, defaultRunnerState } = require('./tab-runner.cjs');
 const { GeoDataStore } = require('./geo-data.cjs');
+const { SyncClient, loadSyncConfig, saveSyncConfig, normalizeSyncConfig } = require('./sync-client.cjs');
+const { RemoteGeoDataStore, RemoteProxyLease } = require('./remote-store.cjs');
 
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
 const appRoot = listsDir(__dirname);
@@ -23,7 +25,9 @@ let listStamp = '';
 let settingsWin = null;
 let listInfo = { source: '', updatedAt: '', message: 'Chưa đọc list.' };
 const registry = new IPRegistry();
-const lease = new ProxyLease();
+let lease = new ProxyLease();
+let syncConfig = null;
+let syncClient = null;
 const runId = randomUUID();
 const ASIDE_W = 360;
 
@@ -72,7 +76,9 @@ async function loadLists() {
   links = r.links;
   runnerConfig = r.runnerConfig;
   listStamp = configStamp(geoData.config);
-  const from = [...new Set([r.proxySource, r.linkSource].filter(Boolean))].join(' + ');
+  const from = syncClient
+    ? `Host ${syncConfig.url} · máy ${syncConfig.machine}`
+    : 'Local ' + [...new Set([r.proxySource, r.linkSource].filter(Boolean))].join(' + ');
   listInfo = {
     source: from,
     updatedAt: new Date().toISOString(),
@@ -262,9 +268,7 @@ app.whenReady().then(async () => {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   runnerConfig = await loadRotatorConfig(appRoot);
-  geoData = new GeoDataStore(dataDir);
-  await geoData.seedFrom(path.join(dataDir, 'geo-proxy-data.sample.json'));
-  await geoData.load();
+  await openDataStore();
   tabs = new BrowserTabs({
     cities: Object.keys(cities),
     createView,
@@ -301,7 +305,54 @@ app.whenReady().then(async () => {
   setInterval(() => {
     if (tabs?.active?.runner?.running) publishPanel(tabs.active);
   }, 500);
+  if (syncClient) {
+    // Cập nhật trạng thái proxy / giữ chỗ của máy khác và gửi phần ghi còn tồn.
+    setInterval(() => {
+      geoData.refreshIfChanged().then(() => publishPanel(tabs?.active)).catch(() => {});
+    }, 5000);
+  }
 }).catch((e) => { dialog.showErrorBox('Geo Proxy Rotator Browser', e.message); app.exit(1); });
+
+// Đồng bộ online bật: dữ liệu và giữ chỗ proxy nằm trên máy chủ auto-post, dùng chung giữa các máy.
+// Không tải được lúc mở app thì hỏi, không lặng lẽ chạy bằng file riêng (dễ trùng proxy với máy khác).
+async function openDataStore() {
+  syncConfig = await loadSyncConfig(dataDir);
+  if (syncConfig.mode === 'host') {
+    syncClient = new SyncClient({ ...syncConfig, fetcher: (url, opts) => net.fetch(url, opts) });
+    const remote = new RemoteGeoDataStore(syncClient, syncConfig.machine);
+    for (;;) {
+      try {
+        await remote.load();
+        break;
+      } catch (e) {
+        const choice = dialog.showMessageBoxSync({
+          type: 'warning',
+          title: 'Chế độ dữ liệu Host',
+          message: 'Chế độ Host: không tải được dữ liệu từ máy chủ.',
+          detail: `${syncConfig.url}\n${e.message}`,
+          buttons: ['Thử lại', 'Chuyển sang Local (geo-proxy-data.json)', 'Thoát'],
+          defaultId: 0,
+          cancelId: 2,
+        });
+        if (choice === 2) { app.exit(0); return; }
+        if (choice === 1) {
+          syncConfig = await saveSyncConfig(dataDir, { ...syncConfig, mode: 'local' });
+          syncClient = null;
+          break;
+        }
+      }
+    }
+    if (syncClient) {
+      geoData = remote;
+      lease = new RemoteProxyLease(syncClient, syncConfig.machine);
+      await lease.start();
+      return;
+    }
+  }
+  geoData = new GeoDataStore(dataDir);
+  await geoData.seedFrom(path.join(dataDir, 'geo-proxy-data.sample.json'));
+  await geoData.load();
+}
 
 ipcMain.handle('command', async (event, action, payload, tabId) => {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
@@ -425,10 +476,66 @@ ipcMain.handle('settings', async (event, action, payload) => {
     if (action === 'clearProxies') { await geoData.clearProxies(); await afterSettingsChange(); return { ok: true, ...settingsInfo() }; }
     if (action === 'clearDone') { await geoData.clearDone(); await afterSettingsChange(); return { ok: true, ...settingsInfo() }; }
     if (action === 'copy') { clipboard.writeText(String(payload || '')); return { ok: true }; }
+    if (action === 'syncLoad') {
+      return {
+        ok: true,
+        sync: await loadSyncConfig(dataDir),
+        active: Boolean(syncClient),
+        online: syncClient ? syncClient.online : null,
+        lastError: syncClient ? syncClient.lastError : '',
+        pending: syncClient ? geoData.outbox.length : 0,
+      };
+    }
+    if (action === 'syncTest') {
+      const c = normalizeSyncConfig(payload);
+      const client = new SyncClient({ ...c, fetcher: (url, opts) => net.fetch(url, opts), timeoutMs: 10000 });
+      return { ok: true, server: await client.call('ping') };
+    }
+    if (action === 'syncUpload') {
+      // Đẩy file dữ liệu trên máy này lên máy chủ (gộp, không xoá dữ liệu đang có trên máy chủ).
+      const c = normalizeSyncConfig(payload.sync);
+      const client = new SyncClient({ ...c, fetcher: (url, opts) => net.fetch(url, opts), timeoutMs: 120000 });
+      const local = new GeoDataStore(dataDir);
+      await local.load();
+      const r = await client.call('import', {
+        data: { config: local.config, proxyHealth: local.health, proxyArticleDone: local.done },
+        overwriteConfig: payload.overwriteConfig === true,
+      });
+      if (syncClient) await geoData.load().catch(() => {});
+      await afterSettingsChange();
+      return { ok: true, ...r };
+    }
+    if (action === 'syncSave') {
+      const c = await saveSyncConfig(dataDir, payload);
+      const changed = (c.mode === 'host') !== Boolean(syncClient)
+        || (syncClient && (c.url !== syncConfig.url || c.key !== syncConfig.key || c.machine !== syncConfig.machine));
+      if (changed) {
+        const choice = dialog.showMessageBoxSync(settingsWin, {
+          type: 'question',
+          message: 'Cần khởi động lại app để đổi chế độ dữ liệu.',
+          detail: 'Các tab đang chạy sẽ dừng và mở lại.',
+          buttons: ['Khởi động lại ngay', 'Để sau'],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        if (choice === 0) { app.relaunch(); app.quit(); }
+      }
+      return { ok: true, sync: c, restartNeeded: changed };
+    }
     throw Error('Thao tác không hợp lệ.');
   } catch (e) {
     return { ok: false, error: e.message };
   }
+});
+
+// Trả các proxy máy này đang giữ trên máy chủ, để máy khác dùng được ngay (không chờ hết hạn 3 phút).
+let quitting = false;
+app.on('before-quit', (e) => {
+  if (quitting || !lease.stop) return;
+  e.preventDefault();
+  quitting = true;
+  const timeout = new Promise((r) => setTimeout(r, 3000));
+  Promise.race([Promise.all([geoData.flush().catch(() => {}), lease.stop()]), timeout]).finally(() => app.quit());
 });
 
 app.on('window-all-closed', () => app.quit());

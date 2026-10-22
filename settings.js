@@ -257,6 +257,78 @@ $('clearDone').addEventListener('click', async () => {
   } catch { /* đã báo lỗi */ }
 });
 
+function readSync() {
+  return {
+    mode: $('modeHost').checked ? 'host' : 'local',
+    url: $('syncUrl').value,
+    key: $('syncKey').value,
+    machine: $('syncMachine').value,
+  };
+}
+
+function renderSyncState(r) {
+  if (!r.active) {
+    $('syncHint').textContent = r.sync.mode === 'host'
+      ? 'Đã chọn Host nhưng app vẫn đang chạy Local: khởi động lại app để áp dụng.'
+      : 'Đang chạy Local.';
+    return;
+  }
+  const state = r.online === false ? `Host: mất kết nối máy chủ (${r.lastError}).` : 'Đang chạy Host, đồng bộ với máy chủ.';
+  $('syncHint').textContent = state + (r.pending ? ` ${r.pending} thay đổi chờ gửi.` : '');
+}
+
+let syncDirty = false;
+for (const id of ['syncUrl', 'syncKey', 'syncMachine']) $(id).addEventListener('input', () => { syncDirty = true; });
+for (const id of ['modeLocal', 'modeHost']) $(id).addEventListener('change', () => { syncDirty = true; });
+
+async function loadSync() {
+  const r = await call('syncLoad');
+  if (!syncDirty && !formFocused()) {
+    $('modeHost').checked = r.sync.mode === 'host';
+    $('modeLocal').checked = r.sync.mode !== 'host';
+    setVal('syncUrl', r.sync.url);
+    setVal('syncKey', r.sync.key);
+    setVal('syncMachine', r.sync.machine);
+  }
+  renderSyncState(r);
+}
+
+$('syncTest').addEventListener('click', async () => {
+  $('syncHint').textContent = 'Đang kiểm tra…';
+  try {
+    const { server: s } = await call('syncTest', readSync());
+    $('syncHint').textContent = `Kết nối OK. Máy chủ có ${s.health} proxy có trạng thái (${s.dead} Không), `
+      + `${s.done} cặp proxy–bài, ${s.leases} chỗ đang giữ, ${s.hasConfig ? 'đã có' : 'chưa có'} cài đặt.`;
+  } catch (e) {
+    $('syncHint').textContent = e.message;
+  }
+});
+
+$('syncUpload').addEventListener('click', async () => {
+  const overwrite = window.confirm(
+    'Đẩy dữ liệu máy này lên máy chủ (gộp trạng thái proxy và lịch sử, không xoá gì trên máy chủ).\n\n'
+    + 'OK: dùng luôn cài đặt (proxy, bài, nhịp chạy) của máy này cho mọi máy.\n'
+    + 'Cancel: giữ cài đặt đang có trên máy chủ (nếu máy chủ chưa có thì vẫn lấy của máy này).',
+  );
+  $('syncHint').textContent = 'Đang đẩy dữ liệu…';
+  try {
+    const r = await call('syncUpload', { sync: readSync(), overwriteConfig: overwrite });
+    $('syncHint').textContent = `Đã gộp ${r.health} trạng thái proxy, ${r.done} cặp proxy–bài`
+      + (r.configTaken ? ', và cài đặt của máy này.' : ', giữ cài đặt trên máy chủ.');
+  } catch (e) {
+    $('syncHint').textContent = e.message;
+  }
+});
+
+$('syncSave').addEventListener('click', async () => {
+  try {
+    const r = await call('syncSave', readSync());
+    syncDirty = false;
+    setStatus(r.restartNeeded ? 'Đã lưu chế độ. Khởi động lại app để áp dụng.' : 'Đã lưu chế độ.', false);
+    await loadSync();
+  } catch { /* đã báo lỗi */ }
+});
+
 $('fetchProxies').addEventListener('click', () => fetchProxies());
 $('save').addEventListener('click', () => { save().catch(() => {}); });
 
@@ -267,6 +339,8 @@ setInterval(() => {
   } else {
     inspect().catch(() => {});
   }
+  if (!formFocused()) loadSync().catch(() => {});
 }, 4000);
 
 load().catch(() => {});
+loadSync().catch(() => {});

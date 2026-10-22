@@ -51,6 +51,25 @@ Bấm nút **Cài đặt** ở cột trái. Cửa sổ này giống trang Cài �
 
 Bấm **Lưu cấu hình** là mọi tab dùng cài đặt mới ngay từ proxy / bài kế tiếp, không cần khởi động lại. Cài đặt lưu vào mục `config` của `private-data/geo-proxy-data.json` (cùng định dạng extension).
 
+## Chế độ dữ liệu: Local và Host
+
+Chọn trong **Cài đặt → Chế độ đọc dữ liệu**, rồi khởi động lại app.
+
+| Chế độ | Dữ liệu nằm ở | Dùng khi |
+|---|---|---|
+| **Local** (mặc định) | `private-data/geo-proxy-data.json` trên máy này | Chạy một máy |
+| **Host** | Máy chủ auto-post, qua API `/api/geo-sync` | Nhiều máy cùng chạy (ví dụ nhà 30 tab + công ty 20 tab) |
+
+Ở chế độ Host:
+
+- Proxy, bài viết, lịch sử, trạng thái proxy và cài đặt dùng chung cho mọi máy.
+- Máy chủ giữ chỗ từng proxy (và IP đầu ra) cho đúng một tab. Tab ở máy khác tự bỏ qua, lấy proxy kế tiếp.
+- Mỗi máy gia hạn chỗ giữ mỗi phút. Máy tắt đột ngột thì proxy tự được trả sau 3 phút.
+- Mất mạng tới máy chủ: tab không xin proxy mới (chờ 20 giây rồi thử lại), kết quả đã chạy được giữ lại và gửi khi có mạng.
+- Theo dõi và sửa cài đặt trên web: `{máy chủ}/geo` (đăng nhập auto-post).
+- Địa chỉ máy chủ, khoá (`GEO_SYNC_KEY` trong `.env` của auto-post) và tên máy lưu ở `private-data/sync.json`, không lên git. Mỗi máy đặt **tên máy khác nhau**.
+- Lần đầu: bấm **Đẩy dữ liệu máy này lên máy chủ** để đưa lịch sử và trạng thái proxy hiện có lên.
+
 ## Các file cấu hình
 
 File dữ liệu nằm trong thư mục `private-data/` cạnh app:

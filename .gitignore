@@ -9,6 +9,7 @@ out/
 geo-proxy-data.json
 geo-proxy-data.broken-*.json
 geo-proxy-data.backup-*.json
+private-data/sync.json
 *.tmp
 *.crswap
 

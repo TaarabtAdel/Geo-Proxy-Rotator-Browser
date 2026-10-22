@@ -161,6 +161,7 @@ function waitPageLoad(wc, timeoutMs, signal, tab) {
 function checkFailureKind(e) {
   const text = String(e?.message || e || '');
   if (e?.code === 'DUPLICATE_IP') return 'skip';
+  if (e?.code === 'SYNC_OFFLINE') return 'local';
   if (/HTTP 429\b/.test(text)) return 'skip';
   if (/ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|ERR_NETWORK_IO_SUSPENDED/i.test(text)) return 'local';
   return 'dead';
@@ -212,6 +213,7 @@ async function acquireProxy(deps, tab, state, signal) {
   }
   let lastErr = '';
   let tried = 0;
+  let remoteBusy = 0;
   for (const { item, idx } of picked.order) {
     if (tried >= 36) break;
     if (signal.aborted || !state.running) throw signal.reason || Error('Đã dừng.');
@@ -220,6 +222,23 @@ async function acquireProxy(deps, tab, state, signal) {
     deps.lease.release(tab.id);
     deps.lease.lease(item.id, tab.id, 'checking');
     tab.leasedProxyId = item.id;
+    // Chế độ đồng bộ online: máy chủ quyết định proxy có đang bị máy khác giữ không.
+    if (deps.lease.claimRemote) {
+      let claimed;
+      try {
+        claimed = await deps.lease.claimRemote(item, tab.id);
+      } catch (e) {
+        deps.lease.release(tab.id);
+        tab.leasedProxyId = null;
+        throw new NoProxyError(`${e.message}. Thử lại sau 20 giây.`, true);
+      }
+      if (!claimed) {
+        deps.lease.release(tab.id);
+        tab.leasedProxyId = null;
+        remoteBusy += 1;
+        continue;
+      }
+    }
     tried += 1;
     const location = pickLocation();
     addLog(state, 'info', `Proxy ${idx + 1}/${deps.candidates.length}: ${item.host}:${item.port}`);
@@ -240,6 +259,9 @@ async function acquireProxy(deps, tab, state, signal) {
     deps.publishPanel(tab);
     try {
       await deps.connectTab(tab, { ...item, id: item.id, skipGeo: true }, signal, false);
+      if (deps.lease.claimIp) await deps.lease.claimIp(tab.id, tab.net.state.ip);
+      if (remoteBusy) addLog(state, 'info', `Bỏ qua ${remoteBusy} proxy đang được máy khác giữ.`);
+      remoteBusy = 0;
       deps.lease.lease(item.id, tab.id, 'using');
       tab.currentProxy = item;
       state.checkDeadline = null;
@@ -294,7 +316,7 @@ async function acquireProxy(deps, tab, state, signal) {
       deps.publishPanel(tab);
     }
   }
-  if (!tried) throw new NoProxyError('Proxy còn bài đang được tab khác kiểm tra/dùng. Thử lại sau 20 giây.', true);
+  if (!tried) throw new NoProxyError('Proxy còn bài đang được tab khác (hoặc máy khác) kiểm tra/dùng. Thử lại sau 20 giây.', true);
   const err = Error(lastErr || 'Không tìm được proxy hoạt động.');
   err.name = 'BatchFailedError';
   throw err;
@@ -462,7 +484,11 @@ async function tabLoop(deps, tab, state, gen) {
   const alive = () => state.running && tab.runGen === gen && !tab.closing;
   try {
     if (!alive()) return;
-    await deps.dataStore.load();
+    try {
+      await deps.dataStore.load();
+    } catch (e) {
+      addLog(state, 'error', `Không đọc lại được dữ liệu, dùng bản đang có: ${e.message}`);
+    }
     if (!alive()) return;
     state.articleTotal = deps.links.length;
     state.proxyTotal = deps.candidates.length;

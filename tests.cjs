@@ -353,6 +353,55 @@ test('settings table shows the same status words as the tab panel',async()=>{
  assert.deepEqual(t.rows.map(r=>r.status),['Live','Không','Chưa thử','Đang kiểm tra','Không hỗ trợ']);
  assert.equal(t.rows[0].title,'IP 9.9.9.9');assert.equal(t.skipped,1);assert.equal(t.counts['Chưa thử'],1);
 });
+function fakeGeoSyncServer(){
+ const leases=new Map(),health={},done={},log=[];let config={};
+ const live=()=>{const now=Date.now();for(const [k,l] of leases)if(l.expiresAt<=now)leases.delete(k);return [...leases.entries()].map(([key,l])=>({key,...l}));};
+ const handlers={
+  claim:b=>{live();const l=leases.get(b.key);if(l&&l.owner!==b.owner)return{ok:false,owner:l.owner};leases.set(b.key,{owner:b.owner,machine:b.machine,expiresAt:Date.now()+b.ttlMs,claimedAt:Date.now()});return{ok:true};},
+  release:b=>{for(const [k,l] of leases)if(b.machine&&!b.owner?l.machine===b.machine:(l.owner===b.owner&&(!b.keys||b.keys.includes(k))))leases.delete(k);return{ok:true};},
+  renew:()=>({ok:true}),
+  batch:b=>{for(const op of b.ops){log.push(op);if(op.action==='setHealth')health[op.proxyKey]={...op.entry,updatedAt:Date.now()};else (done[op.proxyKey]||(done[op.proxyKey]=[])).push({url:op.url,ok:op.outcome?.ok,at:1});}return{ok:true};},
+  updateConfig:b=>{config={...config,...b.patch};return{ok:true,config};},
+  pull:()=>({ok:true,full:true,seq:log.length,config,proxyHealth:health,proxyArticleDone:done,leases:live()}),
+ };
+ const fetcher=async(url,opts)=>{const b=JSON.parse(opts.body);if(opts.headers['x-geo-sync-key']!=='k')return{ok:false,status:401,json:async()=>({error:'Sai khoá đồng bộ.'})};
+  return{ok:true,status:200,json:async()=>handlers[b.action](b)};};
+ return {fetcher,leases,log};
+}
+test('host mode: two machines never check the same proxy and share health through the server',async()=>{
+ const {SyncClient}=require('./sync-client.cjs');const {RemoteGeoDataStore,RemoteProxyLease}=require('./remote-store.cjs');
+ const {acquireProxy,defaultRunnerState}=require('./tab-runner.cjs');
+ const srv=fakeGeoSyncServer();
+ const candidates=[1,2,3,4].map(n=>({id:'10.9.0.'+n+':80',type:'http',host:'10.9.0.'+n,port:80,user:'',password:''}));
+ const machine=async name=>{const client=new SyncClient({url:'http://h',key:'k',machine:name,fetcher:srv.fetcher});
+  const store=new RemoteGeoDataStore(client,name);await store.load();const lease=new RemoteProxyLease(client,name);const checking=new Map();
+  return {store,lease,checking,deps:{candidates,lease,dataStore:store,links:['https://a.test/'],config:{proxyTimeoutSec:5},ensureLists:async()=>{},publishPanel(){},
+   connectTab:(tab,p,signal)=>new Promise((_,reject)=>{checking.set(tab.id,p.id);signal.addEventListener('abort',()=>reject(signal.reason),{once:true});})}};};
+ const A=await machine('nha'),B=await machine('cty');
+ const runs=[];
+ for(const M of [A,B])for(const id of [1,2]){const tab={id,proxySlot:0,proxyCursor:0,runner:Object.assign(defaultRunnerState(),{running:true})};
+  const ctrl=new AbortController();const p=acquireProxy(M.deps,tab,tab.runner,ctrl.signal);p.catch(()=>{});runs.push({M,tab,ctrl,p});}
+ await new Promise(r=>setTimeout(r,700));
+ const used=runs.map(r=>r.M.checking.get(r.tab.id));
+ assert.equal(new Set(used).size,4);assert.equal(srv.leases.size,4);
+ await A.store.setHealth(candidates[3],'dead',{note:'x'});await A.store.flush();
+ B.store.lastPull=0;await B.store.refreshIfChanged();
+ assert.equal(B.store.isDead(candidates[3]),true);
+ assert.equal(candidates.filter(c=>B.store.isBusyExternal(c)).length,2);
+ for(const r of runs)r.ctrl.abort();for(const r of runs)await r.p.catch(()=>{});
+ for(const r of runs)r.M.lease.release(r.tab.id);
+ await new Promise(r=>setTimeout(r,50));
+ assert.equal(srv.leases.size,0);
+ assert.equal(A.store.isDead(candidates[0]),false);
+});
+test('data mode is local unless host is chosen; old enabled flag still means host',()=>{
+ const {normalizeSyncConfig}=require('./sync-client.cjs');
+ assert.equal(normalizeSyncConfig({}).mode,'local');
+ assert.equal(normalizeSyncConfig({mode:'host'}).mode,'host');
+ assert.equal(normalizeSyncConfig({enabled:true}).mode,'host');
+ assert.equal(normalizeSyncConfig({mode:'local',enabled:true}).mode,'local');
+ assert.equal(normalizeSyncConfig({machine:'Máy nhà #1'}).machine,'Máy-nhà-1');
+});
 test('reload pauses on disconnect and cannot fire after disable or close',()=>{
  const a=reloadHarness(),b=reloadHarness();a.r.setEnabled(true);b.r.setEnabled(true);
  a.setAvailable(false);assert.equal(a.timers.size,0);assert.equal(b.timers.size,1);

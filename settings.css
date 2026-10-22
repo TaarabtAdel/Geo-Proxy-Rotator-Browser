@@ -45,7 +45,7 @@ label {
   margin: 12px 0 6px;
 }
 
-input[type="number"], textarea, select {
+input[type="number"], input[type="url"], input[type="text"], input[type="password"], textarea, select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
