@@ -307,12 +307,13 @@ app.whenReady().then(async () => {
   setInterval(() => {
     if (tabs?.active?.runner?.running) publishPanel(tabs.active);
   }, 500);
-  if (syncClient) {
-    // Cập nhật trạng thái proxy / giữ chỗ của máy khác và gửi phần ghi còn tồn.
-    setInterval(() => {
-      geoData.refreshIfChanged().then(() => publishPanel(tabs?.active)).catch(() => {});
-    }, 5000);
-  }
+  // Kéo dữ liệu mới (Host: trạng thái / giữ chỗ của máy khác; Local: file bị thay bên ngoài) và đọc lại
+  // danh sách proxy / bài ngay khi cài đặt đổi (sửa ở /geo hoặc ở máy khác), không đợi tab chạy mới đọc.
+  setInterval(() => {
+    ensureLists()
+      .catch((e) => { listInfo.message = e.message; })
+      .finally(() => publishPanel(tabs?.active));
+  }, 5000);
 }).catch((e) => { dialog.showErrorBox('Geo Proxy Rotator Browser', e.message); app.exit(1); });
 
 // Đồng bộ online bật: dữ liệu và giữ chỗ proxy nằm trên máy chủ auto-post, dùng chung giữa các máy.

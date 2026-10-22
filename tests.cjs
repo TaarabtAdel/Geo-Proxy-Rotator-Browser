@@ -409,6 +409,31 @@ test('data mode is local unless host is chosen; old enabled flag still means hos
  assert.equal(machineId('113.161.5.20','a3f9'),'113.161.5.20-a3f9');
  assert.notEqual(machineId('1.2.3.4',normalizeSyncConfig({}).installId),machineId('1.2.3.4','ffff'));
 });
+test('out of work: tab waits instead of stopping, resumes when new proxies arrive, Dừng still stops it',async()=>{
+ const {runTabLoop,stopRunner,defaultRunnerState}=require('./tab-runner.cjs');
+ const {ProxyLease}=require('./proxy-lease.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-wait-'));
+ const store=new GeoDataStore(dir);await store.load();
+ let cands=[];const links=['https://a.test/1'];const checking=[];
+ const net={controller:null,connected:false,checking:false,task:null,async lock(){},
+  run(fn){this.controller=new AbortController();const p=fn(this.controller.signal);this.task=p;return p.finally(()=>{this.task=null;});},
+  cancel(){this.controller?.abort();}};
+ const tab={id:7,proxySlot:0,proxyCursor:0,runner:defaultRunnerState(),net};
+ const deps={get candidates(){return cands;},get links(){return links;},lease:new ProxyLease(),dataStore:store,
+  config:{proxyTimeoutSec:5},ensureLists:async()=>{},publishPanel(){},workPollMs:50,
+  connectTab:(t,p,signal)=>new Promise((_,reject)=>{checking.push(p.id);signal.addEventListener('abort',()=>reject(signal.reason),{once:true});})};
+ const loop=runTabLoop(deps,tab);
+ await new Promise(r=>setTimeout(r,200));
+ assert.equal(tab.runner.phase,'waiting_work');assert.equal(tab.runner.running,true);
+ assert.match(tab.runner.logs[0].message,/Chờ link \/ proxy mới/);
+ cands=[{id:'10.7.0.1:80',type:'http',host:'10.7.0.1',port:80,user:'',password:''}];
+ await new Promise(r=>setTimeout(r,800));
+ assert.deepEqual(checking,['10.7.0.1:80']);assert.equal(tab.runner.phase,'checking');
+ assert.ok(tab.runner.logs.some(l=>/Có việc mới/.test(l.message)));
+ stopRunner(tab);await loop;
+ assert.equal(tab.runner.running,false);assert.equal(tab.runner.phase,'idle');
+ assert.equal(store.isDead(cands[0]),false);
+});
 test('reload pauses on disconnect and cannot fire after disable or close',()=>{
  const a=reloadHarness(),b=reloadHarness();a.r.setEnabled(true);b.r.setEnabled(true);
  a.setAvailable(false);assert.equal(a.timers.size,0);assert.equal(b.timers.size,1);

@@ -20,6 +20,7 @@ const PHASE_LABEL = {
   loading_article: 'Đang mở bài viết',
   waiting: 'Đang chờ bài tiếp theo',
   switching: 'Đang chuyển proxy',
+  waiting_work: 'Chờ việc mới (hết proxy / bài)',
 };
 
 function pickWait(min, max) {
@@ -480,6 +481,51 @@ function runTabLoop(deps, tab) {
   return job;
 }
 
+// Kiểm tra "còn cặp proxy–bài chưa chạy" duyệt hết list (vài nghìn proxy × số bài): nhớ kết quả
+// theo đúng list + phiên bản dữ liệu, để nhiều tab đang chờ việc không tính lại liên tục.
+const workMemo = { candidates: null, links: null, rev: -1, value: false };
+
+function hasPendingWork(deps) {
+  const store = deps.dataStore;
+  if (workMemo.candidates === deps.candidates && workMemo.links === deps.links && workMemo.rev === store.rev) {
+    return workMemo.value;
+  }
+  const value = store.pendingPairExists(deps.candidates, deps.links, { skipDead: true });
+  Object.assign(workMemo, { candidates: deps.candidates, links: deps.links, rev: store.rev, value });
+  return value;
+}
+
+async function refreshLists(deps) {
+  if (!deps.ensureLists) return;
+  try {
+    await deps.ensureLists();
+  } catch { /* list trống hoặc mất mạng: dùng bản đang có */ }
+}
+
+const WORK_POLL_MS = 5000;
+
+// Hết proxy / hết bài: không dừng tab mà chờ. Khi Cài đặt (app hoặc /geo) thêm link hay proxy, tab tự chạy tiếp.
+async function waitForWork(deps, tab, state, alive, reason) {
+  addLog(state, 'success', `${reason} Chờ link / proxy mới, có là tự chạy tiếp.`);
+  state.phase = 'waiting_work';
+  state.proxyLabel = '—';
+  state.articleLabel = '—';
+  state.articleUrl = '';
+  deps.publishPanel(tab);
+  while (alive()) {
+    await sleep(deps.workPollMs || WORK_POLL_MS, alive);
+    await refreshLists(deps);
+    if (hasPendingWork(deps)) {
+      state.articleTotal = deps.links.length;
+      state.proxyTotal = deps.candidates.length;
+      tab.proxyCursor = 0;
+      addLog(state, 'info', `Có việc mới (${deps.candidates.length} proxy · ${deps.links.length} bài), chạy tiếp.`);
+      deps.publishPanel(tab);
+      return;
+    }
+  }
+}
+
 async function tabLoop(deps, tab, state, gen) {
   const alive = () => state.running && tab.runGen === gen && !tab.closing;
   try {
@@ -489,6 +535,7 @@ async function tabLoop(deps, tab, state, gen) {
     } catch (e) {
       addLog(state, 'error', `Không đọc lại được dữ liệu, dùng bản đang có: ${e.message}`);
     }
+    await refreshLists(deps);
     if (!alive()) return;
     state.articleTotal = deps.links.length;
     state.proxyTotal = deps.candidates.length;
@@ -496,23 +543,19 @@ async function tabLoop(deps, tab, state, gen) {
     tab.proxyCursor = tab.proxyCursor || 0;
     tab.skipWait = false;
 
-    if (!deps.dataStore.pendingPairExists(deps.candidates, deps.links, { skipDead: true })) {
-      addLog(state, 'info', 'Mọi cặp proxy–bài đã chạy (hoặc proxy còn lại đều dead). Xoá geo-proxy-data.json để chạy lại.');
-      return;
-    }
-
     addLog(state, 'info', `Tab ${tab.id}: 1 proxy → ${deps.links.length} link → đổi proxy (${state.donePairs} cặp đã lưu).`);
     deps.publishPanel(tab);
 
     while (alive()) {
-      if (!deps.dataStore.pendingPairExists(deps.candidates, deps.links, { skipDead: true })) {
-        addLog(state, 'success', 'Đã chạy hết cặp proxy–bài (proxy dead bị bỏ qua).');
-        break;
+      if (!hasPendingWork(deps)) {
+        await waitForWork(deps, tab, state, alive, 'Đã chạy hết cặp proxy–bài (proxy dead bị bỏ qua).');
+        continue;
       }
 
       let passOk = false;
       let forceSwitch = false;
       let retryMs = 0;
+      let outOfWork = '';
       try {
         await tab.net.run(async (signal) => {
           const { item } = await acquireProxy(deps, tab, state, signal);
@@ -522,10 +565,13 @@ async function tabLoop(deps, tab, state, gen) {
       } catch (e) {
         if (!alive()) break;
         if (e.name === 'NoProxyError') {
-          addLog(state, 'info', e.message);
-          deps.publishPanel(tab);
-          if (!e.busy) break;
-          retryMs = 20000;
+          if (e.busy) {
+            addLog(state, 'info', e.message);
+            deps.publishPanel(tab);
+            retryMs = 20000;
+          } else {
+            outOfWork = e.message;
+          }
         } else if (e instanceof ProxyFailError || e.name === 'ProxyFailError') {
           addLog(state, 'error', e.message);
           if (tab.currentProxy) {
@@ -545,6 +591,10 @@ async function tabLoop(deps, tab, state, gen) {
         await cleanupSession(tab, deps, state);
       }
       if (!alive()) break;
+      if (outOfWork) {
+        await waitForWork(deps, tab, state, alive, outOfWork);
+        continue;
+      }
       if (passOk || forceSwitch) {
         advanceProxyCursor(tab, state.proxyIndex, deps.candidates.length);
         const switchMs = deps.config.proxyTimeoutSec * 1000;

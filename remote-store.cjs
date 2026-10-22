@@ -65,9 +65,14 @@ class RemoteGeoDataStore extends GeoDataStore {
       if (!l.key.startsWith('proxy:')) continue;
       this.lease[l.key.slice(6)] = { owner: l.owner, machine: l.machine, claimedAt: l.claimedAt, expiresAt: l.expiresAt };
     }
+    // rev chỉ tăng khi dữ liệu thật sự đổi, để các phép tính nhớ theo rev (thống kê, "còn việc không") không chạy lại mỗi lần kéo.
+    const leaseSig = Object.entries(this.lease).map(([k, l]) => k + '@' + l.machine).sort().join('|');
+    const changed = r.full || r.config || Object.keys(r.health || {}).length || (r.done || []).length
+      || leaseSig !== this.leaseSig;
+    this.leaseSig = leaseSig;
     this.seq = r.seq;
     this.lastPull = Date.now();
-    this.rev += 1;
+    if (changed) this.rev += 1;
   }
 
   async _pull(force) {

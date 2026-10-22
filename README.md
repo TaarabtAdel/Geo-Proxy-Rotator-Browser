@@ -164,6 +164,7 @@ Mỗi tab là một runner riêng:
 4. **Đang mở bài viết**: tải bài theo thứ tự trong danh sách bài.
 5. **Đang chờ bài tiếp theo**: cuộn trang, chờ `waitMinSec`–`waitMaxSec` giây.
 6. **Đang chuyển proxy**: hết bài, hoặc proxy chết giữa chừng, thì sang proxy kế.
+7. **Chờ việc mới**: mọi cặp proxy–bài đã chạy (hoặc proxy còn lại đều Không). Tab không dừng mà chờ: thêm link / proxy trong Cài đặt hoặc trên `/geo` là tab tự chạy tiếp trong vài giây. Muốn tắt hẳn thì bấm **Dừng**.
 
 Xử lý lỗi giống extension:
 
