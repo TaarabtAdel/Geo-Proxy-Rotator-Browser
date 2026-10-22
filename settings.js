@@ -14,6 +14,7 @@ const KIND_CLASS = {
   pending: 'status-pending',
   busy: 'status-busy',
   untried: 'status-untried',
+  exhausted: 'status-exhausted',
   unsupported: 'status-unsupported',
 };
 

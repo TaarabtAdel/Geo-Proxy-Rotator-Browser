@@ -145,6 +145,7 @@ code { font-size: 12px; }
 .status-pending { background: #fff4d6; color: #9a6700; }
 .status-busy { background: #e7eefe; color: #1d4e89; }
 .status-untried { background: #eef2f0; color: #5d6f66; }
+.status-exhausted { background: #fdf3dc; color: #8a5a00; }
 .status-unsupported { background: #f3e8fd; color: #6b2d9f; }
 
 .filters {

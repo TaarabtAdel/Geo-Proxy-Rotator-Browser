@@ -37,7 +37,7 @@ const ASIDE_W = 360;
 const emit = (name, data) => { if (uiReady && win && !win.isDestroyed()) win.webContents.send(name, data); };
 
 function snapshot(tab) {
-  const stats = geoData ? geoData.stats(candidates, (id) => lease.status(id)) : null;
+  const stats = geoData ? geoData.stats(candidates, (id) => lease.status(id), links) : null;
   return { ...panelSnapshot(tab, listInfo.message), stats };
 }
 
@@ -537,7 +537,7 @@ ipcMain.handle('settings', async (event, action, payload) => {
     }
     if (action === 'inspect') {
       await geoData.refreshIfChanged().catch(() => {});
-      return { ok: true, ...settings.inspectProxies(payload, geoData, (id) => lease.status(id)), ...settingsInfo() };
+      return { ok: true, ...settings.inspectProxies(payload, geoData, (id) => lease.status(id), links), ...settingsInfo() };
     }
     if (action === 'fetchProxies') {
       return { ok: true, ...(await settings.fetchProxySources(payload, (url, opts) => net.fetch(url, opts))) };

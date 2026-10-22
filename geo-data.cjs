@@ -372,19 +372,26 @@ class GeoDataStore {
     return 'dead';
   }
 
+  // Chưa có trạng thái nhưng đã có bản ghi cho mọi bài (vd. sau «Xoá trạng thái»): runner bỏ qua proxy này.
+  bucketFor(proxy, links) {
+    const b = this.healthBucket(proxy);
+    if (b === 'untried' && links && links.length && !this.pendingPairExists([proxy], links)) return 'exhausted';
+    return b;
+  }
+
   // Giống trang Cài đặt của extension: thống kê cặp + tình trạng proxy trong list.
   // leaseStatus(id) trả về 'checking' (tab đang kiểm tra), 'using' (tab đang chạy bài) hoặc null.
-  stats(candidates, leaseStatus) {
+  stats(candidates, leaseStatus, links) {
     const list = candidates || [];
-    if (!this._stats || this._stats.rev !== this.rev || this._stats.list !== list) {
+    if (!this._stats || this._stats.rev !== this.rev || this._stats.list !== list || this._stats.links !== links) {
       const buckets = new Map();
-      const counts = { untried: 0, dead: 0, busy: 0, live: 0 };
+      const counts = { untried: 0, exhausted: 0, dead: 0, busy: 0, live: 0 };
       for (const p of list) {
-        const b = this.healthBucket(p);
+        const b = this.bucketFor(p, links);
         buckets.set(p.id, b);
         counts[b] += 1;
       }
-      this._stats = { rev: this.rev, list, buckets, counts, done: summarizeDone(this.done) };
+      this._stats = { rev: this.rev, list, links, buckets, counts, done: summarizeDone(this.done) };
     }
     const counts = { ...this._stats.counts, inUse: 0, checking: 0 };
     for (const p of list) {

@@ -267,10 +267,11 @@ const STATUS = {
   live: 'Live',
   dead: 'Không',
   untried: 'Chưa thử',
+  exhausted: 'Hết bài',
   unsupported: 'Không hỗ trợ',
 };
 
-function proxyRow(p, store, leaseStatus) {
+function proxyRow(p, store, leaseStatus, links) {
   const candidate = proxyToCandidate(p);
   const row = {
     line: proxyToLine(p),
@@ -293,12 +294,15 @@ function proxyRow(p, store, leaseStatus) {
   const s = health && health.status;
   if (s === 'live') return { ...row, status: STATUS.live, kind: 'live', title: ip || 'Kết nối thành công' };
   if (s && s !== 'unknown' && s !== 'pending') return { ...row, status: STATUS.dead, kind: 'dead', title: health.note || 'Proxy lỗi' };
+  if (store.bucketFor(candidate, links) === 'exhausted') {
+    return { ...row, status: STATUS.exhausted, kind: 'exhausted', title: 'Đã chạy mọi bài trong danh sách — tab bỏ qua.' };
+  }
   return row;
 }
 
-function inspectProxies(text, store, leaseStatus) {
+function inspectProxies(text, store, leaseStatus, links) {
   const { proxies, skipped } = parseProxySource(text);
-  const rows = proxies.map((p) => proxyRow(p, store, leaseStatus));
+  const rows = proxies.map((p) => proxyRow(p, store, leaseStatus, links));
   const counts = {};
   for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
   return { rows, skipped, total: rows.length, counts };

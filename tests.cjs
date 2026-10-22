@@ -353,6 +353,37 @@ test('settings table shows the same status words as the tab panel',async()=>{
  assert.deepEqual(t.rows.map(r=>r.status),['Live','Không','Chưa thử','Đang kiểm tra','Không hỗ trợ']);
  assert.equal(t.rows[0].title,'IP 9.9.9.9');assert.equal(t.skipped,1);assert.equal(t.counts['Chưa thử'],1);
 });
+test('proxy without status but done every link is Hết bài, matching the runner (not Chưa thử)',async()=>{
+ const S=require('./app-settings.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-exhausted-'));
+ const store=new GeoDataStore(dir);await store.load();
+ const links=['https://x.test/1','https://x.test/2'];
+ const p1={id:'1.1.1.1:80',type:'http',host:'1.1.1.1',port:80},p2={id:'1.1.1.2:80',type:'http',host:'1.1.1.2',port:80};
+ for(const u of links)await store.remember(p1,u,{ok:false,note:'Timeout'});
+ await store.remember(p2,links[0],{ok:true});
+ const s=store.stats([p1,p2],()=>null,links);
+ assert.equal(s.exhausted,1);assert.equal(s.untried,1);
+ assert.equal(s.untried+s.exhausted+s.dead+s.busy+s.live+s.inUse+s.checking,s.total);
+ assert.equal(store.pendingPairExists([p1],links),false);assert.equal(store.pendingPairExists([p2],links),true);
+ const t=S.inspectProxies('1.1.1.1:80\n1.1.1.2:80',store,()=>null,links);
+ assert.deepEqual(t.rows.map(r=>r.status),['Hết bài','Chưa thử']);
+});
+test('host rotation from /geo: full snapshot clears status and new article list gives every proxy work again',async()=>{
+ const S=require('./app-settings.cjs');const {RemoteGeoDataStore}=require('./remote-store.cjs');
+ const store=new RemoteGeoDataStore({url:'http://h',call:async()=>({})},'m1');
+ const p={id:'1.1.1.1:80',type:'http',host:'1.1.1.1',port:80};
+ store._apply({full:true,seq:5,config:{proxyText:'1.1.1.1:80',articles:['https://old.test/a'],backupArticleText:'https://b.test/2'},
+  proxyHealth:{'1.1.1.1:80':{status:'dead',updatedAt:1}},proxyArticleDone:{'1.1.1.1:80':[{url:'https://old.test/a',ok:true,at:1}]},leases:[]});
+ let r=await S.resolveLists(store,'.');const stampBefore=S.configStamp(store.config);
+ assert.equal(store.pendingPairExists(r.candidates,r.links,{skipDead:true}),false);
+ store._apply({full:true,seq:6,config:{proxyText:'1.1.1.1:80',articles:['https://b.test/1'],articleText:'https://b.test/1',backupArticleText:'https://b.test/2'},
+  proxyHealth:{},proxyArticleDone:{'1.1.1.1:80':[{url:'https://old.test/a',ok:true,at:1}]},leases:[]});
+ assert.notEqual(S.configStamp(store.config),stampBefore);
+ r=await S.resolveLists(store,'.');
+ assert.deepEqual(r.links,['https://b.test/1']);
+ assert.equal(store.isDead(p),false);assert.equal(store.bucketFor(p,r.links),'untried');
+ assert.equal(store.pendingPairExists(r.candidates,r.links,{skipDead:true}),true);
+});
 function fakeGeoSyncServer(){
  const leases=new Map(),health={},done={},log=[];let config={};
  const live=()=>{const now=Date.now();for(const [k,l] of leases)if(l.expiresAt<=now)leases.delete(k);return [...leases.entries()].map(([key,l])=>({key,...l}));};

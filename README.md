@@ -45,7 +45,7 @@ Tab đầu tiên tự **Bắt đầu** chạy sau khi mở app.
 Bấm nút **Cài đặt** ở cột trái. Cửa sổ này giống trang Cài đặt của extension:
 
 - **URL nguồn proxy USA** (mỗi dòng một nguồn, `LINK|socks4` / `LINK|socks5` để ép giao thức) và nút **Lấy proxy USA miễn phí**: tải mọi nguồn, gộp, bỏ trùng rồi lưu.
-- **Thêm, sửa hoặc xoá proxy thủ công**, kèm bảng trạng thái (Chưa thử · Không · Bận · Đang kiểm tra · Đang dùng · Live), lọc theo trạng thái, Copy danh sách, Xoá trạng thái, Xoá tất cả.
+- **Thêm, sửa hoặc xoá proxy thủ công**, kèm bảng trạng thái (Chưa thử · Hết bài · Không · Bận · Đang kiểm tra · Đang dùng · Live), lọc theo trạng thái, Copy danh sách, Xoá trạng thái, Xoá tất cả. **Hết bài** = proxy chưa có trạng thái nhưng đã có bản ghi cho mọi bài (thường gặp sau «Xoá trạng thái» mà không xoá lịch sử) — tab bỏ qua nó.
 - **Danh sách bài viết** và nút **Xoá lịch sử đã chạy**.
 - **Nhịp chạy**: chờ min–max, timeout proxy, timeout tải bài, cuộn trang.
 
@@ -177,7 +177,7 @@ Xử lý lỗi giống extension:
 
 - **Thanh tab**: `IP - thành phố` của từng tab. Nút `+` mở thêm tab, mỗi tab tự chạy với proxy khác.
 - **Bắt đầu / Dừng / Next bài**: điều khiển tab đang chọn. Next bỏ qua thời gian chờ.
-- **Tình trạng proxy**: Tất cả · Chưa thử · Không · Bận · Đang dùng · Live.
+- **Tình trạng proxy**: Tất cả · Chưa thử · Hết bài · Không · Bận · Đang dùng · Live.
 - **Cặp proxy–bài đã chạy**: số cặp đã lưu, số chạy được và không được, các lỗi hay gặp.
 - **Nhật ký tab này**: diễn biến chi tiết của tab.
 

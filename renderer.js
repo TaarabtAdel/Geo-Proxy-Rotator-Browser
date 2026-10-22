@@ -54,6 +54,7 @@ function renderStats(stats) {
   const chips = [
     ['Tất cả', stats.total, ''],
     ['Chưa thử', stats.untried, ''],
+    ['Hết bài', stats.exhausted || 0, ''],
     ['Không', stats.dead, 'dead'],
     ['Bận', stats.busy, ''],
     ['Đang kiểm tra', stats.checking, ''],
