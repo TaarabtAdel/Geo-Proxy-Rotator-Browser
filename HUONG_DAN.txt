@@ -17,7 +17,8 @@ CÁCH CHẠY
 1. Giải nén vào thư mục mới. Cài Node.js LTS từ https://nodejs.org nếu chưa có.
 2. Một lần trong thư mục dự án: npm install (cần Internet).
 3. Windows: start.bat — macOS/Linux: ./start.sh hoặc npm start.
-4. Tab đầu đọc list-proxy.txt và mở link trong list-link.txt.
+4. Tab đầu đọc proxy và bài viết trong Cài đặt (lưu ở geo-proxy-data.json).
+   list-proxy.txt / list-link.txt chỉ dùng khi Cài đặt còn trống.
 5. Bấm + hoặc Ctrl+T để mở tab mới. Tab mới có phiên cookie, proxy và vị trí
    riêng, tự thử tìm IP Hoa Kỳ chưa được tab khác sử dụng lúc kiểm tra.
 6. Mỗi tab mới được gán lần lượt một thành phố trong danh sách 25 thành phố.

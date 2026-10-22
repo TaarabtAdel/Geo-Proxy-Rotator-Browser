@@ -155,6 +155,17 @@ function waitPageLoad(wc, timeoutMs, signal, tab) {
   });
 }
 
+// Phân loại lỗi khi kiểm tra proxy. Chỉ 'dead' mới ghi trạng thái Không.
+// 'skip': proxy vẫn chạy nhưng không dùng được lúc này (IP đầu ra trùng tab khác, ipwho.is giới hạn lượt).
+// 'local': mạng của máy đang lỗi, không phải lỗi proxy.
+function checkFailureKind(e) {
+  const text = String(e?.message || e || '');
+  if (e?.code === 'DUPLICATE_IP') return 'skip';
+  if (/HTTP 429\b/.test(text)) return 'skip';
+  if (/ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|ERR_NETWORK_IO_SUSPENDED/i.test(text)) return 'local';
+  return 'dead';
+}
+
 class NoProxyError extends Error {
   constructor(message, busy) {
     super(message);
@@ -267,18 +278,26 @@ async function acquireProxy(deps, tab, state, signal) {
       state.spoofDeadline = null;
       // Dừng hoặc đóng tab giữa chừng không phải lỗi proxy: không đánh dead, không đếm lỗi.
       if (signal.aborted || !state.running || tab.closing) throw signal.reason || e;
-      await deps.dataStore.setHealth(item, 'dead', { note: e.message || String(e) }).catch(() => {});
       lastErr = e.message || String(e);
-      state.checkDeadline = null;
-      state.spoofDeadline = null;
-      addLog(state, 'error', `Proxy #${idx + 1} lỗi: ${lastErr}`);
-      state.failedCount += 1;
+      const kind = checkFailureKind(e);
+      if (kind === 'local') {
+        throw new NoProxyError(`Mạng máy đang lỗi (${lastErr}), không đánh dấu proxy. Thử lại sau 20 giây.`, true);
+      }
+      if (kind === 'skip') {
+        addLog(state, 'info', `Proxy #${idx + 1} tạm bỏ qua (không đánh Không): ${lastErr}`);
+      } else {
+        await deps.dataStore.setHealth(item, 'dead', { note: lastErr }).catch(() => {});
+        addLog(state, 'error', `Proxy #${idx + 1} lỗi → Không: ${lastErr}`);
+        state.failedCount += 1;
+      }
       advanceProxyCursor(tab, idx, deps.candidates.length);
       deps.publishPanel(tab);
     }
   }
   if (!tried) throw new NoProxyError('Proxy còn bài đang được tab khác kiểm tra/dùng. Thử lại sau 20 giây.', true);
-  throw Error(lastErr || 'Không tìm được proxy hoạt động.');
+  const err = Error(lastErr || 'Không tìm được proxy hoạt động.');
+  err.name = 'BatchFailedError';
+  throw err;
 }
 
 async function runArticles(deps, tab, state, signal, proxy) {
@@ -489,6 +508,8 @@ async function tabLoop(deps, tab, state, gen) {
           state.failedCount += 1;
           forceSwitch = true;
           deps.publishPanel(tab);
+        } else if (e.name === 'BatchFailedError') {
+          deps.publishPanel(tab);
         } else if (e.name !== 'AbortError') {
           addLog(state, 'error', e.message || String(e));
           state.failedCount += 1;
@@ -579,4 +600,5 @@ module.exports = {
   requestNext,
   runArticles,
   acquireProxy,
+  checkFailureKind,
 };

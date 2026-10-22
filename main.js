@@ -1,21 +1,26 @@
-const { app, BrowserWindow, WebContentsView, session, ipcMain, dialog, Menu, net } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, dialog, Menu, net, clipboard } = require('electron');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { BrowserTabs } = require('./tabs.cjs');
 const { TabConnection, IPRegistry, BLOCKED, waitFor } = require('./tab-network.cjs');
 const { verifyIPAny } = require('./verify.cjs');
 const { cities, targetURL } = require('./core.cjs');
-const { loadProxyList, loadLinkList, listsDir } = require('./local-lists.cjs');
+const { listsDir } = require('./local-lists.cjs');
 const { loadRotatorConfig } = require('./rotator-config.cjs');
+const settings = require('./app-settings.cjs');
+const { resolveLists, configStamp } = settings;
 const { ProxyLease } = require('./proxy-lease.cjs');
 const { runTabLoop, panelSnapshot, stopRunner, requestNext, defaultRunnerState } = require('./tab-runner.cjs');
 const { GeoDataStore } = require('./geo-data.cjs');
 
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
 const appRoot = listsDir(__dirname);
+const dataDir = path.join(appRoot, 'private-data');
 let win, tabs, uiReady = false, candidates = [], links = [], listTask = null, nextProxySlot = 0;
 let runnerConfig = null;
 let geoData = null;
+let listStamp = '';
+let settingsWin = null;
 let listInfo = { source: '', updatedAt: '', message: 'Chưa đọc list.' };
 const registry = new IPRegistry();
 const lease = new ProxyLease();
@@ -60,21 +65,32 @@ function loadTab(tab, url) {
   layout();
 }
 
+// Một bộ cài đặt chung cho mọi tab: proxy, bài viết và nhịp chạy đọc từ config trong geo-proxy-data.json.
 async function loadLists() {
-  const [proxyResult, linkLines] = await Promise.all([loadProxyList(appRoot), loadLinkList(appRoot)]);
-  candidates = proxyResult.items;
-  links = linkLines;
+  const r = await resolveLists(geoData, appRoot);
+  candidates = r.candidates;
+  links = r.links;
+  runnerConfig = r.runnerConfig;
+  listStamp = configStamp(geoData.config);
+  const from = [...new Set([r.proxySource, r.linkSource].filter(Boolean))].join(' + ');
   listInfo = {
-    source: 'list-proxy.txt + list-link.txt',
+    source: from,
     updatedAt: new Date().toISOString(),
-    message: `${candidates.length} proxy · ${links.length} link`,
+    message: `${candidates.length} proxy · ${links.length} bài${from ? ` (${from})` : ''}`,
   };
-  if (!links.length) throw Error('list-link.txt trống hoặc không có URL hợp lệ.');
+  for (const t of tabs?.items || []) {
+    if (t.runner) {
+      t.runner.proxyTotal = candidates.length;
+      t.runner.articleTotal = links.length;
+    }
+  }
+  if (!links.length) throw Error('Chưa có bài viết. Mở Cài đặt để thêm danh sách bài.');
   return listInfo;
 }
 
 async function ensureLists(signal) {
-  if (candidates.length && links.length) return;
+  await geoData.refreshIfChanged().catch(() => {});
+  if (candidates.length && links.length && listStamp === configStamp(geoData.config)) return;
   if (!listTask) listTask = loadLists().finally(() => { listTask = null; });
   await waitFor(listTask, signal);
   signal?.throwIfAborted();
@@ -92,9 +108,9 @@ const runnerDeps = () => ({
   net,
   registry,
   lease,
-  candidates,
-  links,
-  config: runnerConfig,
+  get candidates() { return candidates; },
+  get links() { return links; },
+  get config() { return runnerConfig; },
   dataStore: geoData,
   layout,
   ensureLists,
@@ -207,7 +223,7 @@ function createView(tab) {
     id: tab.id,
     session: ses,
     registry,
-    verify: (s, signal, auth) => verifyIPAny(net, s, signal, auth, 12000),
+    verify: (s, signal, auth) => verifyIPAny(net, s, signal, auth, (runnerConfig?.proxyTimeoutSec || 15) * 1000),
     geo: (city) => tabs.changeCity(tab.id, city),
     stop: () => { if (!view.webContents.isDestroyed()) { view.webContents.stop(); view.setVisible(false); } },
     onChange: publish,
@@ -246,8 +262,8 @@ app.whenReady().then(async () => {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   runnerConfig = await loadRotatorConfig(appRoot);
-  geoData = new GeoDataStore(appRoot);
-  await geoData.seedFrom(path.join(appRoot, 'geo-proxy-data.sample.json'));
+  geoData = new GeoDataStore(dataDir);
+  await geoData.seedFrom(path.join(dataDir, 'geo-proxy-data.sample.json'));
   await geoData.load();
   tabs = new BrowserTabs({
     cities: Object.keys(cities),
@@ -272,7 +288,11 @@ app.whenReady().then(async () => {
   shortcuts(win.webContents);
   await newTab();
   win.on('resize', layout);
-  win.on('closed', () => { uiReady = false; tabs.dispose(); });
+  win.on('closed', () => {
+    uiReady = false;
+    tabs.dispose();
+    if (settingsWin && !settingsWin.isDestroyed()) settingsWin.close();
+  });
   await win.loadFile('index.html');
   uiReady = true;
   try { await loadLists(); } catch (e) { listInfo.message = e.message; }
@@ -304,10 +324,12 @@ ipcMain.handle('command', async (event, action, payload, tabId) => {
     }
     if (action === 'closeTab') { await closeTab(payload); return { ok: true }; }
     if (action === 'reloadLists') {
+      await geoData.load();
       await loadLists();
       publish();
       return { ok: true, panel: snapshot(tabs.active) };
     }
+    if (action === 'openSettings') { openSettings(); return { ok: true }; }
     const tab = tabs.items.find((t) => t.id === (tabId ?? tabs.activeId));
     if (!tab || tab.closing) throw Error('Chọn tab đang mở.');
     if (action === 'runnerStart') { startRunner(tab); publish(); return { ok: true, panel: snapshot(tab) }; }
@@ -326,6 +348,83 @@ ipcMain.handle('command', async (event, action, payload, tabId) => {
       if (action === 'reload') wc.reload();
       return { ok: true };
     }
+    throw Error('Thao tác không hợp lệ.');
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Một cửa sổ Cài đặt chung cho mọi tab (giống trang Cài đặt của extension).
+function openSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.focus(); return; }
+  settingsWin = new BrowserWindow({
+    parent: win,
+    width: 940,
+    height: 860,
+    minWidth: 640,
+    minHeight: 480,
+    title: 'Cài đặt · Geo Proxy Rotator Browser',
+    backgroundColor: '#f3f6f4',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'settings-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  settingsWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  settingsWin.webContents.on('will-navigate', (e) => e.preventDefault());
+  settingsWin.on('closed', () => { settingsWin = null; });
+  settingsWin.loadFile('settings.html');
+}
+
+function settingsInfo() {
+  return {
+    dataFile: geoData.file,
+    listSource: listInfo.source,
+    done: geoData.doneSummary(),
+  };
+}
+
+async function afterSettingsChange() {
+  try { await loadLists(); } catch (e) { listInfo.message = e.message; }
+  publish();
+}
+
+ipcMain.handle('settings', async (event, action, payload) => {
+  if (!settingsWin || settingsWin.isDestroyed() || event.sender !== settingsWin.webContents) {
+    return { ok: false, error: 'Không được phép.' };
+  }
+  try {
+    if (action === 'load') {
+      await geoData.refreshIfChanged().catch(() => {});
+      const current = await resolveLists(geoData, appRoot);
+      return { ok: true, form: settings.settingsForm(geoData, current), ...settingsInfo() };
+    }
+    if (action === 'inspect') {
+      await geoData.refreshIfChanged().catch(() => {});
+      return { ok: true, ...settings.inspectProxies(payload, geoData, (id) => lease.status(id)), ...settingsInfo() };
+    }
+    if (action === 'fetchProxies') {
+      return { ok: true, ...(await settings.fetchProxySources(payload, (url, opts) => net.fetch(url, opts))) };
+    }
+    if (action === 'save') {
+      const patch = settings.settingsPatch(payload);
+      await geoData.updateConfig(patch);
+      await afterSettingsChange();
+      const current = await resolveLists(geoData, appRoot);
+      return {
+        ok: true,
+        form: settings.settingsForm(geoData, current),
+        message: `${patch.proxies.length} proxy, ${patch.articles.length} bài. Mọi tab dùng cài đặt mới từ proxy / bài kế tiếp.`,
+        ...settingsInfo(),
+      };
+    }
+    if (action === 'clearHealth') { await geoData.clearHealth(); await afterSettingsChange(); return { ok: true, ...settingsInfo() }; }
+    if (action === 'clearProxies') { await geoData.clearProxies(); await afterSettingsChange(); return { ok: true, ...settingsInfo() }; }
+    if (action === 'clearDone') { await geoData.clearDone(); await afterSettingsChange(); return { ok: true, ...settingsInfo() }; }
+    if (action === 'copy') { clipboard.writeText(String(payload || '')); return { ok: true }; }
     throw Error('Thao tác không hợp lệ.');
   } catch (e) {
     return { ok: false, error: e.message };

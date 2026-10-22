@@ -52,6 +52,13 @@ function proxyKey(proxy) {
   return key;
 }
 
+function proxyToLine(proxy) {
+  const protocol = normalizeProtocol(proxy.protocol) || 'http';
+  const auth = proxy.username ? ':' + proxy.username + ':' + (proxy.password || '') : '';
+  const base = proxy.host + ':' + proxy.port + auth;
+  return protocol === 'http' ? base : protocol + '://' + base;
+}
+
 function parseProxySource(input) {
   const text = String(input || '').trim();
   let entries = [];
@@ -93,4 +100,4 @@ function parseProxySource(input) {
   return { proxies, skipped };
 }
 
-module.exports = { parseProxyLine, parseProxySource, proxyKey, normalizeProtocol };
+module.exports = { parseProxyLine, parseProxySource, proxyKey, proxyToLine, normalizeProtocol };

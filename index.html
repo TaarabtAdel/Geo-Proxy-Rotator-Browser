@@ -9,7 +9,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><strong>Geo Proxy Rotator Browser</strong><small>Mỗi tab · 1 proxy bận · hết list-link rồi đổi proxy</small></div>
+    <div class="brand"><strong>Geo Proxy Rotator Browser</strong><small>Mỗi tab · 1 proxy bận · hết bài rồi đổi proxy</small></div>
     <div class="pill" id="badge">Sẵn sàng</div>
   </header>
   <div class="tabstrip"><div id="tabs" role="tablist"></div><button id="newTab" type="button" title="Tab mới">+</button></div>
@@ -17,12 +17,15 @@
     <button type="button" class="nav-btn" data-action="back">Lui</button>
     <button type="button" class="nav-btn" data-action="forward">Tới</button>
     <button type="button" class="nav-btn" data-action="reload">Tải lại</button>
-    <form id="addressForm"><input id="address" placeholder="Xem URL tab (tự mở từ list-link.txt)"><button type="submit">Mở</button></form>
+    <form id="addressForm"><input id="address" placeholder="Xem URL tab (tự mở bài trong Cài đặt)"><button type="submit">Mở</button></form>
   </nav>
   <aside class="sidebar">
     <header class="side-head">
       <div><h1>Tab <span id="sideTabId">—</span></h1><p>Geo Proxy Rotator</p></div>
-      <button id="reloadLists" type="button" class="ghost">Đọc lại list</button>
+      <span class="side-tools">
+        <button id="openSettings" type="button">Cài đặt</button>
+        <button id="reloadLists" type="button" class="ghost" title="Đọc lại cài đặt từ geo-proxy-data.json">Đọc lại</button>
+      </span>
     </header>
     <p id="phase" class="phase idle">Sẵn sàng</p>
     <div class="actions">
@@ -44,7 +47,7 @@
     <section><h2>Nhật ký tab này</h2><ol id="logs"></ol></section>
     <p id="message" class="message" role="status"></p>
   </aside>
-  <main><div class="placeholder"><p>Tab tự lấy proxy (không trùng tab khác) → mở lần lượt <strong>list-link.txt</strong> → đổi proxy → lặp.</p></div></main>
+  <main><div class="placeholder"><p>Tab tự lấy proxy (không trùng tab khác) → mở lần lượt <strong>danh sách bài</strong> trong Cài đặt → đổi proxy → lặp. Cài đặt dùng chung cho mọi tab.</p></div></main>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -44,9 +44,14 @@
       "geo-spoof.cjs",
       "us-locations.cjs",
       "geo-config.json",
-      "geo-proxy-data.sample.json",
+      "private-data/geo-proxy-data.sample.json",
       "list-proxy.txt",
-      "list-link.txt"
+      "list-link.txt",
+      "app-settings.cjs",
+      "settings.html",
+      "settings.js",
+      "settings.css",
+      "settings-preload.js"
     ],
     "win": {
       "target": "nsis"

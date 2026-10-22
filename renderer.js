@@ -189,6 +189,7 @@ $('start').onclick = async () => { busy = true; renderPanel(); const r = await c
 $('stop').onclick = async () => { busy = true; const r = await call('runnerStop'); busy = false; if (r.panel) panel = r.panel; renderPanel(); };
 $('nextAuto').onclick = async () => { busy = true; const r = await call('runnerNext'); busy = false; if (!r.ok) $('message').textContent = r.error; if (r.panel) panel = r.panel; renderPanel(); };
 $('reloadLists').onclick = async () => { busy = true; const r = await call('reloadLists'); busy = false; if (r.panel) panel = r.panel; renderPanel(); };
+$('openSettings').onclick = () => call('openSettings');
 $('newTab').onclick = () => call('newTab');
 $('addressForm').onsubmit = (e) => { e.preventDefault(); call('navigate', $('address').value); };
 for (const b of document.querySelectorAll('[data-action]')) b.onclick = () => call(b.dataset.action);

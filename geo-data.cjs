@@ -209,6 +209,7 @@ class GeoDataStore {
     };
     // Ghi ra file tạm rồi đổi tên: tắt app giữa chừng không làm hỏng file đang có.
     const tmp = `${this.file}.tmp`;
+    await fs.mkdir(path.dirname(this.file), { recursive: true });
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2), 'utf8');
     await fs.rename(tmp, this.file);
     this.mtimeMs = await this._mtime();
@@ -296,6 +297,45 @@ class GeoDataStore {
     return this._enqueue(() => {});
   }
 
+  // Giữ nguyên các khoá config khác (extension có thể ghi thêm), chỉ thay khoá trong patch.
+  updateConfig(patch) {
+    return this._mutate(() => {
+      this.config = { ...this.config, ...patch };
+      return true;
+    });
+  }
+
+  clearHealth() {
+    return this._mutate(() => {
+      this.health = {};
+      return true;
+    });
+  }
+
+  clearDone() {
+    return this._mutate(() => {
+      this.done = {};
+      return true;
+    });
+  }
+
+  clearProxies() {
+    return this._mutate(() => {
+      this.config = { ...this.config, proxyText: '', proxies: [] };
+      this.health = {};
+      this.lease = {};
+      return true;
+    });
+  }
+
+  healthOf(proxy) {
+    return this.health[proxyStorageKey(proxy)] || null;
+  }
+
+  doneSummary() {
+    return summarizeDone(this.done);
+  }
+
   isDead(proxy) {
     return this.health[proxyStorageKey(proxy)]?.status === 'dead';
   }
@@ -322,12 +362,13 @@ class GeoDataStore {
     return false;
   }
 
+  // 'pending' là extension ghi khi giữ proxy ("Đang dùng") và có thể bị bỏ lại khi extension tắt.
+  // Bận thật hay không đã do proxyLease quyết định, nên pending tính như Chưa thử (app vẫn thử nó).
   healthBucket(proxy) {
     if (this.isBusyExternal(proxy)) return 'busy';
     const s = this.health[proxyStorageKey(proxy)]?.status;
-    if (!s || s === 'unknown') return 'untried';
+    if (!s || s === 'unknown' || s === 'pending') return 'untried';
     if (s === 'live') return 'live';
-    if (s === 'pending') return 'pending';
     return 'dead';
   }
 
@@ -335,15 +376,15 @@ class GeoDataStore {
   // leaseStatus(id) trả về 'checking' (tab đang kiểm tra), 'using' (tab đang chạy bài) hoặc null.
   stats(candidates, leaseStatus) {
     const list = candidates || [];
-    if (!this._stats || this._stats.rev !== this.rev || this._stats.n !== list.length) {
+    if (!this._stats || this._stats.rev !== this.rev || this._stats.list !== list) {
       const buckets = new Map();
-      const counts = { untried: 0, dead: 0, busy: 0, live: 0, pending: 0 };
+      const counts = { untried: 0, dead: 0, busy: 0, live: 0 };
       for (const p of list) {
         const b = this.healthBucket(p);
         buckets.set(p.id, b);
         counts[b] += 1;
       }
-      this._stats = { rev: this.rev, n: list.length, buckets, counts, done: summarizeDone(this.done) };
+      this._stats = { rev: this.rev, list, buckets, counts, done: summarizeDone(this.done) };
     }
     const counts = { ...this._stats.counts, inUse: 0, checking: 0 };
     for (const p of list) {

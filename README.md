@@ -1,6 +1,6 @@
 # Geo Proxy Rotator Browser
 
-Trình duyệt Electron chạy bài viết qua nhiều proxy, mỗi tab một proxy riêng và giả lập vị trí USA. Logic giống extension **Geo Proxy Rotator**: mỗi proxy mở lần lượt hết các bài trong `list-link.txt`, rồi mới đổi sang proxy kế.
+Trình duyệt Electron chạy bài viết qua nhiều proxy, mỗi tab một proxy riêng và giả lập vị trí USA. Logic giống extension **Geo Proxy Rotator**: mỗi proxy mở lần lượt hết các bài trong danh sách bài (cửa sổ **Cài đặt**), rồi mới đổi sang proxy kế.
 
 ## Cài đặt
 
@@ -40,11 +40,39 @@ Lần đầu sẽ tải Electron (khoảng 100 MB), cần mạng ổn định.
 
 Tab đầu tiên tự **Bắt đầu** chạy sau khi mở app.
 
+## Cài đặt trong app (dùng chung cho mọi tab)
+
+Bấm nút **Cài đặt** ở cột trái. Cửa sổ này giống trang Cài đặt của extension:
+
+- **URL nguồn proxy USA** (mỗi dòng một nguồn, `LINK|socks4` / `LINK|socks5` để ép giao thức) và nút **Lấy proxy USA miễn phí**: tải mọi nguồn, gộp, bỏ trùng rồi lưu.
+- **Thêm, sửa hoặc xoá proxy thủ công**, kèm bảng trạng thái (Chưa thử · Không · Bận · Đang kiểm tra · Đang dùng · Live), lọc theo trạng thái, Copy danh sách, Xoá trạng thái, Xoá tất cả.
+- **Danh sách bài viết** và nút **Xoá lịch sử đã chạy**.
+- **Nhịp chạy**: chờ min–max, timeout proxy, timeout tải bài, cuộn trang.
+
+Bấm **Lưu cấu hình** là mọi tab dùng cài đặt mới ngay từ proxy / bài kế tiếp, không cần khởi động lại. Cài đặt lưu vào mục `config` của `private-data/geo-proxy-data.json` (cùng định dạng extension).
+
 ## Các file cấu hình
 
-Tất cả nằm cùng thư mục với app.
+File dữ liệu nằm trong thư mục `private-data/` cạnh app:
 
-### `list-proxy.txt`: danh sách proxy
+```text
+private-data/
+  geo-proxy-data.json         cài đặt + lịch sử chạy (không lên git)
+  geo-proxy-data.sample.json  file mẫu rỗng cho máy mới
+  links/                      lưu trữ các list link theo ngày (app không đọc)
+```
+
+`list-proxy.txt`, `list-link.txt`, `geo-config.json` vẫn nằm cạnh app. Từ khi có cửa sổ Cài đặt, **`geo-proxy-data.json` là nguồn chính**. Ba file dưới đây chỉ được đọc khi `config` trong `geo-proxy-data.json` còn trống mục tương ứng (máy mới clone, file dữ liệu rỗng):
+
+| File | Dùng khi `config` chưa có |
+|---|---|
+| `list-proxy.txt` | danh sách proxy |
+| `list-link.txt` | danh sách bài viết |
+| `geo-config.json` | nhịp chạy (thời gian chờ, timeout, cuộn) |
+
+Sửa ba file này khi `config` đã có dữ liệu sẽ **không có tác dụng**. Hãy sửa trong cửa sổ Cài đặt.
+
+### `list-proxy.txt`: danh sách proxy (dự phòng)
 
 Mỗi dòng một proxy. Dòng bắt đầu bằng `#` được bỏ qua.
 
@@ -58,11 +86,11 @@ socks5://10.10.10.10:1080
 - Không ghi giao thức thì hiểu là HTTP.
 - Tài khoản `user:pass` chỉ dùng được với HTTP. SOCKS4/SOCKS5 có mật khẩu sẽ bị bỏ qua.
 
-### `list-link.txt`: danh sách bài viết
+### `list-link.txt`: danh sách bài viết (dự phòng)
 
 Mỗi dòng một URL `http`/`https`. Mỗi proxy sẽ chạy lần lượt từ bài đầu đến bài cuối.
 
-### `geo-config.json`: thời gian và cuộn trang
+### `geo-config.json`: thời gian và cuộn trang (dự phòng)
 
 | Khóa | Mặc định | Ý nghĩa |
 |---|---|---|
@@ -75,18 +103,17 @@ Mỗi dòng một URL `http`/`https`. Mỗi proxy sẽ chạy lần lượt từ
 
 Mỗi khóa trong file đều có dòng chú thích `//` giải thích. Có thể sửa hoặc thêm chú thích thoải mái, app vẫn đọc được. Hai khóa `loop` và `parallelTabs` hiện chưa có tác dụng.
 
-Sửa xong thì khởi động lại app.
-
-### `geo-proxy-data.json`: lịch sử chạy
+### `private-data/geo-proxy-data.json`: cài đặt và lịch sử chạy
 
 App tự tạo và cập nhật file này, **cùng định dạng với extension**:
 
+- `config`: cài đặt chung (nguồn proxy, proxy, bài viết, nhịp chạy). Sửa bằng cửa sổ Cài đặt.
 - `proxyArticleDone`: cặp proxy–bài đã chạy (thành công hoặc lỗi). Lần sau sẽ bỏ qua.
 - `proxyHealth`: tình trạng proxy (`live` / `dead`). Proxy `dead` bị bỏ qua.
 
 File này **không đưa lên git** (đã có trong `.gitignore`) vì thay đổi liên tục.
 
-### `geo-proxy-data.sample.json`: file mẫu trên git
+### `private-data/geo-proxy-data.sample.json`: file mẫu trên git
 
 File mẫu rỗng, chỉ có cấu trúc, được commit lên git. Khi chạy app trên máy mới mà chưa có `geo-proxy-data.json`, app tự chép file mẫu này thành `geo-proxy-data.json` rồi ghi lịch sử vào đó.
 
@@ -95,14 +122,14 @@ App **không bao giờ ghi đè** `geo-proxy-data.json` đã có.
 Muốn máy mới bỏ qua sẵn proxy chết và các cặp đã chạy thì chép dữ liệu thật vào file mẫu rồi đưa lên git (file có thể nặng vài MB):
 
 ```bash
-cp geo-proxy-data.json geo-proxy-data.sample.json
-git add geo-proxy-data.sample.json
+cp private-data/geo-proxy-data.json private-data/geo-proxy-data.sample.json
+git add private-data/geo-proxy-data.sample.json
 git commit -m "Cập nhật dữ liệu proxy mẫu"
 ```
 
 ## Dùng chung dữ liệu với extension
 
-Chép `geo-proxy-data.json` từ thư mục dữ liệu của extension sang thư mục app, có thể chép cả khi app đang chạy. App tự đọc lại file khi thấy file thay đổi. Chép ngược từ app sang extension cũng được.
+Chép `geo-proxy-data.json` từ thư mục dữ liệu của extension sang thư mục `private-data/` của app, có thể chép cả khi app đang chạy. App tự đọc lại file khi thấy file thay đổi. Chép ngược từ app sang extension cũng được.
 
 Đừng để extension và app **cùng ghi vào một file** một lúc.
 
@@ -113,7 +140,7 @@ Mỗi tab là một runner riêng:
 1. **Đang đặt proxy**: lấy proxy kế trong list. Bỏ qua proxy dead, proxy đã chạy hết bài, và proxy đang bận ở tab khác hoặc ở extension.
 2. **Đang kiểm tra kết nối**: kiểm tra IP qua proxy. Hai tab không bao giờ dùng trùng IP.
 3. **Đang giả lập vị trí**: chọn ngẫu nhiên một thành phố USA, đặt GPS và múi giờ.
-4. **Đang mở bài viết**: tải bài theo thứ tự trong `list-link.txt`.
+4. **Đang mở bài viết**: tải bài theo thứ tự trong danh sách bài.
 5. **Đang chờ bài tiếp theo**: cuộn trang, chờ `waitMinSec`–`waitMaxSec` giây.
 6. **Đang chuyển proxy**: hết bài, hoặc proxy chết giữa chừng, thì sang proxy kế.
 
@@ -137,7 +164,7 @@ Xử lý lỗi giống extension:
 |---|---|
 | Thử lại proxy đã đánh dấu dead | Xóa mục `proxyHealth` trong `geo-proxy-data.json` |
 | Chạy lại mọi bài | Xóa mục `proxyArticleDone` |
-| Xóa sạch lịch sử | Tắt app, xóa `geo-proxy-data.json` (app sẽ tạo lại từ file mẫu rỗng) |
+| Xóa sạch lịch sử | Tắt app, xóa `private-data/geo-proxy-data.json` (app sẽ tạo lại từ file mẫu rỗng) |
 
 ## Đóng gói cài đặt Windows
 

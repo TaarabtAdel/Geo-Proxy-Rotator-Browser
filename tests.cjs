@@ -274,6 +274,85 @@ test('tabs never check the same proxy at once and stopping mid-check does not ma
  assert.equal(lease.has('p1'),false);assert.equal(lease.has('p2'),false);
  assert.equal(a.runner.failedCount,0);
 });
+test('only real proxy failures during check are marked dead',async()=>{
+ const {acquireProxy,checkFailureKind,defaultRunnerState}=require('./tab-runner.cjs');
+ const {ProxyLease}=require('./proxy-lease.cjs');
+ const dup=Error('IP đầu ra trùng với tab khác.');dup.code='DUPLICATE_IP';
+ assert.equal(checkFailureKind(dup),'skip');
+ assert.equal(checkFailureKind(Error('Dịch vụ IP trả HTTP 429')),'skip');
+ assert.equal(checkFailureKind(Error('net::ERR_INTERNET_DISCONNECTED')),'local');
+ assert.equal(checkFailureKind(Error('net::ERR_PROXY_CONNECTION_FAILED')),'dead');
+ assert.equal(checkFailureKind(Error('Hết thời gian kiểm tra IP.')),'dead');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-kind-'));
+ const store=new GeoDataStore(dir);await store.load();
+ const candidates=[1,2,3].map(n=>({id:'p'+n,type:'http',host:'10.0.1.'+n,port:80}));
+ const errors={p1:dup,p2:Error('net::ERR_PROXY_CONNECTION_FAILED'),p3:Error('net::ERR_INTERNET_DISCONNECTED')};
+ const deps={candidates,lease:new ProxyLease(),dataStore:store,links:['https://a.test/'],config:{proxyTimeoutSec:5},
+  ensureLists:async()=>{},publishPanel(){},connectTab:async(tab,p)=>{throw errors[p.id];}};
+ const tab={id:1,proxySlot:0,proxyCursor:0,runner:Object.assign(defaultRunnerState(),{running:true})};
+ await assert.rejects(acquireProxy(deps,tab,tab.runner,new AbortController().signal),e=>e.name==='NoProxyError'&&e.busy);
+ assert.equal(store.isDead(candidates[0]),false);
+ assert.equal(store.isDead(candidates[1]),true);
+ assert.equal(store.isDead(candidates[2]),false);
+ assert.equal(tab.runner.failedCount,1);
+ assert.equal(tab.proxyCursor,2);
+});
+test('stale extension pending counts as untried and all chips add up to total',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-pending-'));
+ await fs.writeFile(path.join(dir,'geo-proxy-data.json'),JSON.stringify({version:1,proxyHealth:{
+  '1.1.1.1:80':{status:'pending',owner:'ext',updatedAt:1,note:'Đang dùng'},
+  '1.1.1.2:80':{status:'dead',owner:'ext',updatedAt:1},
+  '1.1.1.3:80':{status:'live',owner:'ext',updatedAt:1}}}));
+ const store=new GeoDataStore(dir);await store.load();
+ const list=[1,2,3,4].map(n=>({id:'1.1.1.'+n+':80',type:'http',host:'1.1.1.'+n,port:80}));
+ const s=store.stats(list,id=>id==='1.1.1.4:80'?'checking':null);
+ assert.equal(s.untried,1);assert.equal(s.dead,1);assert.equal(s.live,1);assert.equal(s.checking,1);
+ assert.equal(s.untried+s.dead+s.busy+s.live+s.inUse+s.checking,s.total);
+ assert.equal(store.isDead(list[0]),false);
+});
+test('settings in geo-proxy-data.json win over txt files, which only seed an empty config',async()=>{
+ const S=require('./app-settings.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-settings-'));
+ await fs.writeFile(path.join(dir,'list-proxy.txt'),'1.1.1.1:80\n');
+ await fs.writeFile(path.join(dir,'list-link.txt'),'https://file.test/a\n');
+ await fs.writeFile(path.join(dir,'geo-config.json'),'{"waitMinSec":7,"waitMaxSec":9}');
+ const store=new GeoDataStore(dir);await store.load();
+ let r=await S.resolveLists(store,dir);
+ assert.equal(r.proxySource,'list-proxy.txt');assert.equal(r.linkSource,'list-link.txt');
+ assert.deepEqual(r.links,['https://file.test/a']);assert.equal(r.runnerConfig.waitMinSec,7);
+ const before=S.configStamp(store.config);
+ await store.updateConfig(S.settingsPatch({proxySourceUrl:'https://src.test/a.txt|socks5',
+  proxyText:'2.2.2.2:8080\nsocks5://3.3.3.3:1080\n2.2.2.2:8080\nrác',articleText:'https://cfg.test/x?fbclid=1\nhttps://cfg.test/x?fbclid=2',
+  waitMinSec:50,waitMaxSec:20,proxyTimeoutSec:30,articleLoadTimeoutSec:60,scrollEnabled:true,scrollSpeed:'fast',scrollDepthPercent:90,loop:true}));
+ assert.notEqual(S.configStamp(store.config),before);
+ r=await S.resolveLists(store,dir);
+ assert.equal(r.proxySource,'geo-proxy-data.json');
+ assert.deepEqual(r.candidates.map(c=>c.id),['2.2.2.2:8080','socks5://3.3.3.3:1080']);
+ assert.deepEqual(r.links,['https://cfg.test/x?fbclid=1']);
+ assert.equal(r.runnerConfig.waitMinSec,20);assert.equal(r.runnerConfig.waitMaxSec,50);assert.equal(r.runnerConfig.scrollSpeed,'fast');
+ assert.equal(store.config.proxySourceUrl,'https://src.test/a.txt|socks5');
+ assert.throws(()=>S.settingsPatch({proxyText:'',articleText:'ftp://x',waitMinSec:1,waitMaxSec:1,proxyTimeoutSec:15,articleLoadTimeoutSec:60,scrollDepthPercent:95}),/http/);
+ assert.throws(()=>S.settingsPatch({proxyText:'',articleText:'',waitMinSec:1,waitMaxSec:1,proxyTimeoutSec:2,articleLoadTimeoutSec:60,scrollDepthPercent:95}),/Timeout proxy/);
+});
+test('fetching proxy sources merges in order, forces protocol, and keeps going when one source fails',async()=>{
+ const S=require('./app-settings.cjs');
+ const bodies={'https://a.test/list.txt':'1.1.1.1:80\n2.2.2.2:80','https://b.test/s5.txt':'2.2.2.2:80\n4.4.4.4:1080'};
+ const fetcher=async(url)=>bodies[url]!=null?{ok:true,status:200,text:async()=>bodies[url]}:{ok:false,status:500};
+ const r=await S.fetchProxySources('https://a.test/list.txt\nhttps://b.test/s5.txt|socks5\nhttps://down.test/x',fetcher);
+ assert.deepEqual(r.proxyText.split('\n'),['1.1.1.1:80','2.2.2.2:80','socks5://2.2.2.2:80','socks5://4.4.4.4:1080']);
+ assert.equal(r.errors.length,1);assert.match(r.errors[0],/HTTP 500/);
+ await assert.rejects(S.fetchProxySources('https://down.test/x',fetcher),/HTTP 500/);
+});
+test('settings table shows the same status words as the tab panel',async()=>{
+ const S=require('./app-settings.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-table-'));
+ const store=new GeoDataStore(dir);await store.load();
+ await store.setHealth({type:'http',host:'1.1.1.1',port:80},'live',{ip:'9.9.9.9'});
+ await store.setHealth({type:'http',host:'1.1.1.2',port:80},'dead',{note:'ERR_PROXY_CONNECTION_FAILED'});
+ const t=S.inspectProxies('1.1.1.1:80\n1.1.1.2:80\n1.1.1.3:80\n1.1.1.4:80\nsocks5://1.1.1.5:1080:u:p\nxx',store,id=>id==='1.1.1.4:80'?'checking':null);
+ assert.deepEqual(t.rows.map(r=>r.status),['Live','Không','Chưa thử','Đang kiểm tra','Không hỗ trợ']);
+ assert.equal(t.rows[0].title,'IP 9.9.9.9');assert.equal(t.skipped,1);assert.equal(t.counts['Chưa thử'],1);
+});
 test('reload pauses on disconnect and cannot fire after disable or close',()=>{
  const a=reloadHarness(),b=reloadHarness();a.r.setEnabled(true);b.r.setEnabled(true);
  a.setAvailable(false);assert.equal(a.timers.size,0);assert.equal(b.timers.size,1);

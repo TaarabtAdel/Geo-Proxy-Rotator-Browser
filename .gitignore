@@ -8,6 +8,7 @@ out/
 # Runtime data
 geo-proxy-data.json
 geo-proxy-data.broken-*.json
+geo-proxy-data.backup-*.json
 *.tmp
 *.crswap
 

@@ -59,4 +59,4 @@ async function loadLinkList(baseDir) {
     .filter((line) => line && !line.startsWith('#') && /^https?:\/\//i.test(line));
 }
 
-module.exports = { loadProxyList, loadLinkList, listsDir };
+module.exports = { loadProxyList, loadLinkList, listsDir, proxyToCandidate };
