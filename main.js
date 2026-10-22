@@ -14,6 +14,7 @@ const { runTabLoop, panelSnapshot, stopRunner, requestNext, defaultRunnerState }
 const { GeoDataStore } = require('./geo-data.cjs');
 const { SyncClient, loadSyncConfig, saveSyncConfig, normalizeSyncConfig, machineId, detectPublicIp } = require('./sync-client.cjs');
 const { RemoteGeoDataStore, RemoteProxyLease } = require('./remote-store.cjs');
+const { runShutdown } = require('./system-shutdown.cjs');
 
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
 const appRoot = listsDir(__dirname);
@@ -324,7 +325,7 @@ async function openDataStore() {
     publicIp = await detectPublicIp((url, opts) => net.fetch(url, opts));
     machine = machineId(publicIp, syncConfig.installId);
     syncClient = new SyncClient({ ...syncConfig, machine, fetcher: (url, opts) => net.fetch(url, opts) });
-    const remote = new RemoteGeoDataStore(syncClient, machine);
+    const remote = new RemoteGeoDataStore(syncClient, machine, { presence, onCommands: handleCommands });
     for (;;) {
       try {
         await remote.load();
@@ -357,6 +358,82 @@ async function openDataStore() {
   geoData = new GeoDataStore(dataDir);
   await geoData.seedFrom(path.join(dataDir, 'geo-proxy-data.sample.json'));
   await geoData.load();
+}
+
+// Thông tin máy gửi kèm mỗi lần đồng bộ: /geo thấy máy online (kể cả đang chờ việc) và có cho tắt từ xa không.
+function presence() {
+  const items = tabs?.items || [];
+  return {
+    ip: publicIp,
+    platform: process.platform,
+    tabs: items.length,
+    running: items.filter((t) => t.runner?.running).length,
+    allowShutdown: Boolean(syncConfig?.allowRemoteShutdown),
+  };
+}
+
+const SHUTDOWN_COUNTDOWN_MS = 60000;
+let shutdownPending = false;
+
+function ackCommand(cmd, status, note = '') {
+  return syncClient?.call('ackCommand', { id: cmd.id, status, note }).catch(() => {});
+}
+
+function handleCommands(list) {
+  for (const cmd of list) {
+    if (cmd.kind === 'shutdown') handleShutdown(cmd).catch(() => {});
+  }
+}
+
+// Lệnh tắt máy từ /geo: chỉ khi máy đã cho phép. Đếm 60 giây (có nút Huỷ), dừng tab, trả proxy, gửi nốt dữ liệu rồi tắt.
+async function handleShutdown(cmd) {
+  if (!syncConfig?.allowRemoteShutdown) {
+    await ackCommand(cmd, 'rejected', 'Máy chưa bật cho phép tắt từ xa.');
+    return;
+  }
+  if (shutdownPending) {
+    await ackCommand(cmd, 'canceled', 'Đang đếm ngược lệnh tắt trước.');
+    return;
+  }
+  shutdownPending = true;
+  try {
+    const parent = win && !win.isDestroyed() ? win : undefined;
+    const ask = dialog.showMessageBox(parent, {
+      type: 'warning',
+      title: 'Tắt máy từ xa',
+      message: 'Trang /geo yêu cầu tắt máy này.',
+      detail: `Máy sẽ tắt sau ${SHUTDOWN_COUNTDOWN_MS / 1000} giây: các tab dừng, proxy được trả về máy chủ rồi tắt máy.\nBấm Huỷ để giữ máy chạy.`,
+      buttons: ['Tắt ngay', 'Huỷ'],
+      defaultId: 0,
+      cancelId: 1,
+    }).then((r) => (r.response === 1 ? 'cancel' : 'now'));
+    const timeout = new Promise((r) => setTimeout(() => r('timeout'), SHUTDOWN_COUNTDOWN_MS));
+    if (await Promise.race([ask, timeout]) === 'cancel') {
+      await ackCommand(cmd, 'canceled', 'Người dùng trên máy bấm Huỷ.');
+      return;
+    }
+    await stopEverythingForShutdown();
+    await ackCommand(cmd, 'done');
+    try {
+      await runShutdown();
+    } catch (e) {
+      await ackCommand(cmd, 'failed', e.message);
+      dialog.showErrorBox('Tắt máy từ xa', `Không tắt được máy: ${e.message}`);
+    }
+  } finally {
+    shutdownPending = false;
+  }
+}
+
+async function stopEverythingForShutdown() {
+  const items = tabs?.items || [];
+  for (const t of items) stopRunner(t);
+  const loops = Promise.all(items.map((t) => t.runnerLoop?.catch(() => {})));
+  await Promise.race([loops, new Promise((r) => setTimeout(r, 15000))]);
+  await Promise.race([
+    Promise.all([geoData.flush?.().catch(() => {}), lease.stop?.()]),
+    new Promise((r) => setTimeout(r, 5000)),
+  ]);
 }
 
 ipcMain.handle('command', async (event, action, payload, tabId) => {
@@ -512,7 +589,9 @@ ipcMain.handle('settings', async (event, action, payload) => {
       return { ok: true, ...r };
     }
     if (action === 'syncSave') {
-      const c = await saveSyncConfig(dataDir, payload);
+      // Form không có installId: giữ nguyên các khoá đã lưu, nếu không máy bị đổi tên trên /geo sau khi lưu.
+      const c = await saveSyncConfig(dataDir, { ...(await loadSyncConfig(dataDir)), ...payload });
+      if (syncConfig) syncConfig = { ...syncConfig, allowRemoteShutdown: c.allowRemoteShutdown };
       const changed = (c.mode === 'host') !== Boolean(syncClient)
         || (syncClient && (c.url !== syncConfig.url || c.userId !== syncConfig.userId || c.key !== syncConfig.key));
       if (changed) {

@@ -15,6 +15,8 @@ function normalizeSyncConfig(raw) {
     userId: String(c.userId || '').trim(),
     key: String(c.key || '').trim(),
     installId,
+    // Máy tự đồng ý cho trang /geo gửi lệnh tắt máy; mặc định không.
+    allowRemoteShutdown: c.allowRemoteShutdown === true,
   };
 }
 

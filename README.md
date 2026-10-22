@@ -66,7 +66,8 @@ Chọn trong **Cài đặt → Chế độ đọc dữ liệu**, rồi khởi đ
 - Máy chủ giữ chỗ từng proxy (và IP đầu ra) cho đúng một tab. Tab ở máy khác tự bỏ qua, lấy proxy kế tiếp.
 - Mỗi máy gia hạn chỗ giữ mỗi phút. Máy tắt đột ngột thì proxy tự được trả sau 3 phút.
 - Mất mạng tới máy chủ: tab không xin proxy mới (chờ 20 giây rồi thử lại), kết quả đã chạy được giữ lại và gửi khi có mạng.
-- Theo dõi và sửa cài đặt trên web: `{máy chủ}/geo` (đăng nhập auto-post).
+- Theo dõi và sửa cài đặt trên web: `{máy chủ}/geo` (đăng nhập auto-post). Bảng **Máy chạy app** hiện máy online, số tab chạy, proxy đang giữ.
+- **Tắt máy từ xa**: bật ô **Cho phép tắt máy này từ trang /geo** trong Cài đặt app (mặc định tắt), rồi bấm **Tắt máy** trên `/geo`. Máy hiện thông báo đếm 60 giây (có nút Huỷ), dừng tab, trả proxy, gửi nốt dữ liệu rồi tắt máy. Lệnh chỉ có hiệu lực 10 phút. macOS: lần đầu cần cho phép app điều khiển "System Events".
 - Mỗi máy được nhận diện bằng **IP public lúc mở app** cộng 4 ký tự riêng của bản cài (ví dụ `113.161.5.20-a3f9`), để hai máy chung một mạng (cùng IP) không bị coi là một máy.
 - Dữ liệu tách theo **user auto-post**. App nhập **ID user** và **khoá đồng bộ** của user đó, lấy ở trang `{máy chủ}/geo` (mục Kết nối app) sau khi đăng nhập. Các máy của cùng một user dùng chung dữ liệu và không trùng proxy; user khác có dữ liệu riêng.
 - Địa chỉ máy chủ, ID user và khoá lưu ở `private-data/sync.json`, không lên git.

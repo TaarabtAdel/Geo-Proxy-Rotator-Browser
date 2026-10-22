@@ -394,6 +394,36 @@ test('host mode: two machines never check the same proxy and share health throug
  assert.equal(srv.leases.size,0);
  assert.equal(A.store.isDead(candidates[0]),false);
 });
+test('shutdown runs the right OS command and reports errors',async()=>{
+ const {shutdownCommand,runShutdown}=require('./system-shutdown.cjs');
+ assert.deepEqual(shutdownCommand('win32'),['shutdown',['/s','/t','0']]);
+ assert.equal(shutdownCommand('darwin')[0],'osascript');assert.match(shutdownCommand('darwin')[1][1],/shut down/);
+ assert.deepEqual(shutdownCommand('linux'),['systemctl',['poweroff']]);
+ assert.throws(()=>shutdownCommand('aix'),/Chưa hỗ trợ/);
+ const calls=[];
+ await runShutdown({platform:'win32',exec:(c,a,o,cb)=>{calls.push([c,a]);cb(null,'','');}});
+ assert.deepEqual(calls,[['shutdown',['/s','/t','0']]]);
+ await assert.rejects(runShutdown({platform:'linux',exec:(c,a,o,cb)=>cb(Error('x'),'','Access denied')}),/Access denied/);
+ const {normalizeSyncConfig}=require('./sync-client.cjs');
+ assert.equal(normalizeSyncConfig({}).allowRemoteShutdown,false);
+ assert.equal(normalizeSyncConfig({allowRemoteShutdown:true}).allowRemoteShutdown,true);
+});
+test('host pull sends machine presence and hands commands to the app',async()=>{
+ const {SyncClient}=require('./sync-client.cjs');const {RemoteGeoDataStore}=require('./remote-store.cjs');
+ const sent=[];const queue=[{id:'c1',kind:'shutdown',createdAt:1}];
+ const fetcher=async(url,opts)=>{const b=JSON.parse(opts.body);sent.push(b);
+  const body=b.action==='pull'?{ok:true,full:true,seq:0,config:{},proxyHealth:{},proxyArticleDone:{},leases:[],commands:queue.splice(0)}:{ok:true};
+  return{ok:true,status:200,json:async()=>body};};
+ const got=[];
+ const store=new RemoteGeoDataStore(new SyncClient({url:'http://h',userId:'u',key:'k',fetcher}),'1.2.3.4-abcd',
+  {presence:()=>({ip:'1.2.3.4',tabs:3,running:2,allowShutdown:true}),onCommands:l=>got.push(...l)});
+ await store.load();
+ const pull=sent.find(b=>b.action==='pull');
+ assert.equal(pull.machine,'1.2.3.4-abcd');assert.deepEqual(pull.presence,{ip:'1.2.3.4',tabs:3,running:2,allowShutdown:true});
+ assert.deepEqual(got.map(c=>c.id),['c1']);
+ store.lastPull=0;await store.refreshIfChanged();
+ assert.equal(got.length,1);
+});
 test('data mode is local unless host is chosen; old enabled flag still means host',()=>{
  const {normalizeSyncConfig}=require('./sync-client.cjs');
  assert.equal(normalizeSyncConfig({}).mode,'local');

@@ -263,6 +263,7 @@ function readSync() {
     url: $('syncUrl').value,
     userId: $('syncUserId').value,
     key: $('syncKey').value,
+    allowRemoteShutdown: $('syncAllowShutdown').checked,
   };
 }
 
@@ -280,7 +281,7 @@ function renderSyncState(r) {
 
 let syncDirty = false;
 for (const id of ['syncUrl', 'syncUserId', 'syncKey']) $(id).addEventListener('input', () => { syncDirty = true; });
-for (const id of ['modeLocal', 'modeHost']) $(id).addEventListener('change', () => { syncDirty = true; });
+for (const id of ['modeLocal', 'modeHost', 'syncAllowShutdown']) $(id).addEventListener('change', () => { syncDirty = true; });
 
 async function loadSync() {
   const r = await call('syncLoad');
@@ -289,6 +290,7 @@ async function loadSync() {
     $('modeLocal').checked = r.sync.mode !== 'host';
     setVal('syncUrl', r.sync.url);
     setVal('syncUserId', r.sync.userId);
+    $('syncAllowShutdown').checked = r.sync.allowRemoteShutdown === true;
     setVal('syncKey', r.sync.key);
   }
   renderSyncState(r);

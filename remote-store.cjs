@@ -12,10 +12,13 @@ function pairUrl(entry) {
 // Cùng giao diện GeoDataStore nhưng dữ liệu nằm trên máy chủ auto-post (/api/geo-sync).
 // Ghi được áp dụng ngay trong bộ nhớ rồi gửi dồn lên máy chủ; mất mạng thì giữ lại gửi sau.
 class RemoteGeoDataStore extends GeoDataStore {
-  constructor(client, machine) {
+  // presence(): thông tin máy gửi kèm mỗi lần kéo (để /geo thấy máy online). onCommands(list): lệnh từ /geo (tắt máy).
+  constructor(client, machine, { presence, onCommands } = {}) {
     super('.');
     this.client = client;
     this.machine = machine;
+    this.presence = presence;
+    this.onCommands = onCommands;
     this.file = `${client.url} (máy ${machine})`;
     this.seq = -1;
     this.outbox = [];
@@ -76,8 +79,15 @@ class RemoteGeoDataStore extends GeoDataStore {
   }
 
   async _pull(force) {
-    const r = await this.client.call('pull', { since: force ? -1 : this.seq });
+    const r = await this.client.call('pull', {
+      since: force ? -1 : this.seq,
+      machine: this.machine,
+      presence: this.presence ? this.presence() : undefined,
+    });
     this._apply(r);
+    if (r.commands?.length && this.onCommands) {
+      try { this.onCommands(r.commands); } catch { /* lệnh lỗi không làm hỏng đồng bộ */ }
+    }
   }
 
   load() {

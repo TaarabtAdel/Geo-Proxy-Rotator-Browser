@@ -53,7 +53,8 @@
       "settings.css",
       "settings-preload.js",
       "sync-client.cjs",
-      "remote-store.cjs"
+      "remote-store.cjs",
+      "system-shutdown.cjs"
     ],
     "win": {
       "target": "nsis"
