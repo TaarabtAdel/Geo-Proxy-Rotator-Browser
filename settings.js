@@ -282,7 +282,19 @@ function renderSyncState(r) {
 
 let syncDirty = false;
 for (const id of ['syncUrl', 'syncUserId', 'syncKey']) $(id).addEventListener('input', () => { syncDirty = true; });
-for (const id of ['modeLocal', 'modeHost', 'syncAllowShutdown']) $(id).addEventListener('change', () => { syncDirty = true; });
+for (const id of ['modeLocal', 'modeHost']) $(id).addEventListener('change', () => { syncDirty = true; });
+
+// Không cần khởi động lại: lưu ngay khi tick, không phụ thuộc nút «Lưu chế độ».
+$('syncAllowShutdown').addEventListener('change', async () => {
+  const allow = $('syncAllowShutdown').checked;
+  try {
+    const current = await call('syncLoad');
+    await call('syncSave', { ...current.sync, allowRemoteShutdown: allow });
+    setStatus(allow ? 'Đã bật cho phép tắt máy từ /geo.' : 'Đã tắt cho phép tắt máy từ /geo.', false);
+  } catch {
+    $('syncAllowShutdown').checked = !allow;
+  }
+});
 
 async function loadSync() {
   const r = await call('syncLoad');
@@ -324,17 +336,29 @@ $('syncUpload').addEventListener('click', async () => {
   }
 });
 
+async function saveSync() {
+  const r = await call('syncSave', readSync());
+  syncDirty = false;
+  await loadSync();
+  return r;
+}
+
 $('syncSave').addEventListener('click', async () => {
   try {
-    const r = await call('syncSave', readSync());
-    syncDirty = false;
+    const r = await saveSync();
     setStatus(r.restartNeeded ? 'Đã lưu chế độ. Khởi động lại app để áp dụng.' : 'Đã lưu chế độ.', false);
-    await loadSync();
   } catch { /* đã báo lỗi */ }
 });
 
 $('fetchProxies').addEventListener('click', () => fetchProxies());
-$('save').addEventListener('click', () => { save().catch(() => {}); });
+// Sửa Chế độ đọc dữ liệu rồi bấm nút dưới cùng: lưu luôn chế độ, không để mất thay đổi.
+$('save').addEventListener('click', async () => {
+  try {
+    const mode = syncDirty ? await saveSync() : null;
+    await save();
+    if (mode?.restartNeeded) setStatus('Đã lưu cấu hình và chế độ. Khởi động lại app để áp dụng chế độ mới.', false);
+  } catch { /* đã báo lỗi */ }
+});
 
 // Trạng thái proxy đổi liên tục khi các tab chạy; config có thể bị extension hoặc nút khác sửa.
 setInterval(() => {

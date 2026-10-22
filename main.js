@@ -382,6 +382,38 @@ function ackCommand(cmd, status, note = '') {
 function handleCommands(list) {
   for (const cmd of list) {
     if (cmd.kind === 'shutdown') handleShutdown(cmd).catch(() => {});
+    else if (cmd.kind === 'reload') handleReload(cmd).catch(() => {});
+    else ackCommand(cmd, 'failed', `App không biết lệnh "${cmd.kind}".`);
+  }
+}
+
+// Lệnh "Dừng & nạp lại" từ /geo (sau khi đổi bài / proxy): dừng các tab đang chạy, trả proxy,
+// kéo lại toàn bộ dữ liệu rồi chạy lại đúng những tab đó — không chạy nốt danh sách cũ.
+let reloadPending = false;
+async function handleReload(cmd) {
+  if (reloadPending) {
+    await ackCommand(cmd, 'canceled', 'Đang nạp lại từ lệnh trước.');
+    return;
+  }
+  reloadPending = true;
+  const items = tabs?.items || [];
+  const wasRunning = items.filter((t) => t.runner?.running && !t.closing);
+  try {
+    for (const t of wasRunning) stopRunner(t);
+    await Promise.race([
+      Promise.all(wasRunning.map((t) => t.runnerLoop?.catch(() => {}))),
+      new Promise((r) => setTimeout(r, 15000)),
+    ]);
+    await geoData.flush?.().catch(() => {});
+    await geoData.load();
+    await loadLists();
+    await ackCommand(cmd, 'done', `${candidates.length} proxy · ${links.length} bài · chạy lại ${wasRunning.length} tab`);
+  } catch (e) {
+    await ackCommand(cmd, 'failed', e.message);
+  } finally {
+    for (const t of wasRunning) if (!t.closing) startRunner(t);
+    publish();
+    reloadPending = false;
   }
 }
 
