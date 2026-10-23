@@ -120,6 +120,7 @@ function delay(ms, signal, tab, onPoll) {
           const action = await onPoll();
           if (action === 'skip') { resolve('skip'); return; }
           if (action === 'fail-proxy') { reject(new ProxyFailError('Proxy lỗi khi chờ bài')); return; }
+          if (action === 'lease-lost') { reject(new LeaseLostError()); return; }
         } catch (e) { reject(e); return; }
       }
       if (Date.now() - start >= ms) { resolve('done'); return; }
@@ -129,7 +130,19 @@ function delay(ms, signal, tab, onPoll) {
   });
 }
 
-function waitPageLoad(wc, timeoutMs, signal, tab) {
+// Chế độ Host: không gia hạn được chỗ giữ proxy (mất mạng lâu / bị trả trên /geo). Không phải lỗi proxy.
+class LeaseLostError extends Error {
+  constructor() {
+    super('Mất chỗ giữ proxy trên máy chủ (mất mạng quá lâu hoặc proxy bị trả trên /geo): dừng proxy này để máy khác không dùng trùng.');
+    this.name = 'LeaseLostError';
+  }
+}
+
+function leaseLost(deps) {
+  return Boolean(deps.lease?.leaseLost?.());
+}
+
+function waitPageLoad(wc, timeoutMs, signal, tab, isLost) {
   return new Promise((resolve) => {
     let done = false;
     const finish = (result = 'done') => {
@@ -144,6 +157,7 @@ function waitPageLoad(wc, timeoutMs, signal, tab) {
     const onLoad = () => { if (!wc.isLoading()) finish(); };
     const timer = setTimeout(finish, timeoutMs);
     const poll = setInterval(() => {
+      if (isLost && isLost()) { finish('lease-lost'); return; }
       if (!tab?.skipWait) return;
       tab.skipWait = false;
       finish('skip');
@@ -336,6 +350,7 @@ async function runArticles(deps, tab, state, signal, proxy) {
 
   while (cursor < links.length) {
     if (signal.aborted || !state.running) break;
+    if (leaseLost(deps)) throw new LeaseLostError();
     tab.skipWait = false;
     const url = links[cursor];
     state.articleIndex = cursor;
@@ -362,11 +377,15 @@ async function runArticles(deps, tab, state, signal, proxy) {
     layoutSafe(deps);
     scheduleProbe(tab, nav, navId).catch(() => {});
 
-    const loadResult = await waitPageLoad(tab.view.webContents, config.articleLoadTimeoutSec * 1000, signal, tab);
+    const loadResult = await waitPageLoad(tab.view.webContents, config.articleLoadTimeoutSec * 1000, signal, tab, () => leaseLost(deps));
     state.loadDeadline = null;
     if (loadResult === 'abort' || signal.aborted) {
       endArticleNav(nav);
       throw signal.reason || Error('Đã dừng.');
+    }
+    if (loadResult === 'lease-lost') {
+      endArticleNav(nav);
+      throw new LeaseLostError();
     }
 
     const wc = tab.view.webContents;
@@ -422,6 +441,7 @@ async function runArticles(deps, tab, state, signal, proxy) {
     await beginHumanScroll(wc, config);
 
     const waitPoll = async () => {
+      if (leaseLost(deps)) return 'lease-lost';
       if (shouldFailProxy(nav)) return 'fail-proxy';
       const skip = articleSkipReason(nav.status, nav.error);
       if (skip) {
@@ -582,6 +602,10 @@ async function tabLoop(deps, tab, state, gen) {
           deps.publishPanel(tab);
         } else if (e.name === 'BatchFailedError') {
           deps.publishPanel(tab);
+        } else if (e.name === 'LeaseLostError') {
+          addLog(state, 'info', e.message);
+          deps.publishPanel(tab);
+          retryMs = 5000;
         } else if (e.name !== 'AbortError') {
           addLog(state, 'error', e.message || String(e));
           state.failedCount += 1;

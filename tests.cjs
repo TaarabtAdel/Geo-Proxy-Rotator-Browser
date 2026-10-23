@@ -458,6 +458,72 @@ test('host pull sends machine presence and hands commands to the app',async()=>{
  store.lastPull=0;await store.refreshIfChanged();
  assert.equal(got.length,1);
 });
+test('host outbox survives closing the app while offline and is sent on next start, only for the same user',async()=>{
+ const {SyncClient}=require('./sync-client.cjs');const {RemoteGeoDataStore}=require('./remote-store.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-outbox-'));const file=path.join(dir,'host-outbox.json');
+ const offline=async()=>{throw Error('ECONNREFUSED');};
+ const sent=[];
+ const online=async(url,opts)=>{const b=JSON.parse(opts.body);sent.push(b);
+  const body=b.action==='pull'?{ok:true,full:true,seq:1,config:{},proxyHealth:{},proxyArticleDone:{},leases:[]}:{ok:true};
+  return{ok:true,status:200,json:async()=>body};};
+ const proxy={type:'http',host:'9.8.7.6',port:80};
+ const a=new RemoteGeoDataStore(new SyncClient({url:'http://h',userId:'u1',key:'k',fetcher:offline}),'m',{outboxFile:file});
+ await a.remember(proxy,'https://a.test/1',{ok:true});
+ await a.setHealth(proxy,'live',{ip:'1.1.1.1'});
+ await assert.rejects(a.flush());
+ a.persistOutboxSync();
+ assert.equal(JSON.parse(await fs.readFile(file,'utf8')).ops.length,2);
+ const other=new RemoteGeoDataStore(new SyncClient({url:'http://h',userId:'u2',key:'k',fetcher:online}),'m',{outboxFile:file});
+ assert.equal(other.outbox.length,0);
+ const b=new RemoteGeoDataStore(new SyncClient({url:'http://h',userId:'u1',key:'k',fetcher:online}),'m',{outboxFile:file});
+ assert.equal(b.outbox.length,2);
+ await b.load();
+ const batch=sent.find(x=>x.action==='batch');
+ assert.deepEqual(batch.ops.map(o=>o.action),['remember','setHealth']);
+ assert.ok(sent.indexOf(batch)<sent.findIndex(x=>x.action==='pull'));
+ b.persistOutboxSync();
+ await assert.rejects(fs.access(file));
+});
+test('lease is treated as lost after renew keeps failing, or when the server no longer holds it',async()=>{
+ const {RemoteProxyLease}=require('./remote-store.cjs');
+ let t=1000;let net=true;let renewed=1;
+ const client={call:async(action)=>{if(!net)throw Error('offline');if(action==='claim')return{ok:true};if(action==='renew')return{ok:true,renewed};return{ok:true};}};
+ const lease=new RemoteProxyLease(client,'m',{now:()=>t});
+ assert.equal(lease.leaseLost(),false);
+ assert.equal(await lease.claimRemote({type:'http',host:'1.1.1.1',port:80},1),true);
+ t+=100000;assert.equal(lease.leaseLost(),false);
+ net=false;await assert.rejects(lease.renew());
+ t+=11000;assert.equal(lease.leaseLost(),true);
+ net=true;await lease.renew();assert.equal(lease.leaseLost(),false);
+ renewed=0;await lease.renew();assert.equal(lease.leaseLost(),true);
+ lease.release(1);assert.equal(lease.leaseLost(),false);
+ renewed=1;assert.equal(await lease.claimRemote({type:'http',host:'1.1.1.2',port:80},1),true);
+ assert.equal(lease.leaseLost(),false);
+});
+test('lost lease stops the current proxy without marking it dead or recording the article',async()=>{
+ const {runArticles,runTabLoop,stopRunner,defaultRunnerState}=require('./tab-runner.cjs');
+ const {ProxyLease}=require('./proxy-lease.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'geo-lost-'));
+ const store=new GeoDataStore(dir);await store.load();
+ const proxy={id:'10.6.0.1:80',type:'http',host:'10.6.0.1',port:80,user:'',password:''};
+ const tab={id:1,runner:defaultRunnerState()};tab.runner.running=true;
+ await assert.rejects(runArticles({links:['https://a.test/1'],dataStore:store,config:{},lease:{leaseLost:()=>true},publishPanel(){}},tab,tab.runner,new AbortController().signal,proxy),e=>e.name==='LeaseLostError');
+ assert.equal(store.alreadyRun(proxy,'https://a.test/1'),false);
+ const lease=new ProxyLease();lease.leaseLost=()=>true;
+ const net={controller:null,connected:true,checking:false,state:{ip:'5.5.5.5'},async lock(){},
+  run(fn){this.controller=new AbortController();return fn(this.controller.signal);},cancel(){this.controller?.abort();}};
+ const t2={id:2,proxySlot:0,proxyCursor:0,runner:defaultRunnerState(),net,view:{webContents:{isDestroyed:()=>true}}};
+ let connects=0;
+ const deps={candidates:[proxy],links:['https://a.test/1'],lease,dataStore:store,config:{proxyTimeoutSec:5},ensureLists:async()=>{},publishPanel(){},
+  connectTab:async()=>{connects+=1;}};
+ const loop=runTabLoop(deps,t2);
+ await new Promise(r=>setTimeout(r,1500));
+ stopRunner(t2);await loop;
+ assert.ok(connects>=1);
+ assert.equal(store.isDead(proxy),false);
+ assert.equal(t2.runner.failedCount,0);
+ assert.ok(t2.runner.logs.some(l=>/Mất chỗ giữ proxy/.test(l.message)));
+});
 test('data mode is local unless host is chosen; old enabled flag still means host',()=>{
  const {normalizeSyncConfig}=require('./sync-client.cjs');
  assert.equal(normalizeSyncConfig({}).mode,'local');

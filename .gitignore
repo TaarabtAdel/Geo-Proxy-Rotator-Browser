@@ -10,6 +10,8 @@ geo-proxy-data.json
 geo-proxy-data.broken-*.json
 geo-proxy-data.backup-*.json
 private-data/sync.json
+private-data/host-outbox.json
+private-data/host-outbox.json.tmp
 *.tmp
 *.crswap
 

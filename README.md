@@ -65,7 +65,9 @@ Chọn trong **Cài đặt → Chế độ đọc dữ liệu**, rồi khởi đ
 - Proxy, bài viết, lịch sử, trạng thái proxy và cài đặt dùng chung cho mọi máy.
 - Máy chủ giữ chỗ từng proxy (và IP đầu ra) cho đúng một tab. Tab ở máy khác tự bỏ qua, lấy proxy kế tiếp.
 - Mỗi máy gia hạn chỗ giữ mỗi phút. Máy tắt đột ngột thì proxy tự được trả sau 3 phút.
-- Mất mạng tới máy chủ: tab không xin proxy mới (chờ 20 giây rồi thử lại), kết quả đã chạy được giữ lại và gửi khi có mạng.
+- Mất mạng tới máy chủ: tab không xin proxy mới (chờ 20 giây rồi thử lại). Kết quả đã chạy được giữ lại và gửi khi có mạng, kể cả khi tắt app giữa chừng (lưu tạm ở `private-data/host-outbox.json`, lần mở sau gửi trước khi làm việc khác).
+- Không gia hạn được chỗ giữ proxy quá 110 giây (mất mạng lâu), hoặc proxy bị trả trên `/geo`: tab dừng proxy đang dùng trước khi máy chủ trả nó cho máy khác (hạn 3 phút), không đánh proxy là Không, rồi xin proxy mới khi có mạng.
+- Sửa cài đặt trên `/geo` lúc máy đang offline: máy nhận bản mới trong vài giây sau khi có mạng lại (hoặc ở lần mở app sau). App mất mạng thì không lưu được cài đặt, nên không có bản cấu hình riêng đè lên bản trên máy chủ.
 - Theo dõi và sửa cài đặt trên web: `{máy chủ}/geo` (đăng nhập auto-post). Bảng **Máy chạy app** hiện máy online, số tab chạy, proxy đang giữ.
 - **Tắt máy từ xa**: bật ô **Cho phép tắt máy này từ trang /geo** trong Cài đặt app (mặc định tắt), rồi bấm **Tắt máy** trên `/geo`. Máy hiện thông báo đếm 60 giây (có nút Huỷ), dừng tab, trả proxy, gửi nốt dữ liệu rồi tắt máy. Lệnh chỉ có hiệu lực 10 phút. macOS: lần đầu cần cho phép app điều khiển "System Events".
 - Mỗi máy được nhận diện bằng **IP public lúc mở app** cộng 4 ký tự riêng của bản cài (ví dụ `113.161.5.20-a3f9`), để hai máy chung một mạng (cùng IP) không bị coi là một máy.

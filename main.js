@@ -328,7 +328,11 @@ async function openDataStore() {
     publicIp = await detectPublicIp((url, opts) => net.fetch(url, opts));
     machine = machineId(publicIp, syncConfig.installId);
     syncClient = new SyncClient({ ...syncConfig, machine, fetcher: (url, opts) => net.fetch(url, opts) });
-    const remote = new RemoteGeoDataStore(syncClient, machine, { presence, onCommands: handleCommands });
+    const remote = new RemoteGeoDataStore(syncClient, machine, {
+      presence,
+      onCommands: handleCommands,
+      outboxFile: path.join(dataDir, 'host-outbox.json'),
+    });
     for (;;) {
       try {
         await remote.load();
@@ -507,6 +511,7 @@ async function stopEverythingForShutdown() {
     Promise.all([geoData.flush?.().catch(() => {}), lease.stop?.()]),
     new Promise((r) => setTimeout(r, 5000)),
   ]);
+  geoData.persistOutboxSync?.();
 }
 
 ipcMain.handle('command', async (event, action, payload, tabId) => {
@@ -695,7 +700,11 @@ app.on('before-quit', (e) => {
   e.preventDefault();
   quitting = true;
   const timeout = new Promise((r) => setTimeout(r, 3000));
-  Promise.race([Promise.all([geoData.flush().catch(() => {}), lease.stop()]), timeout]).finally(() => app.quit());
+  Promise.race([Promise.all([geoData.flush().catch(() => {}), lease.stop()]), timeout]).finally(() => {
+    // Phần chưa gửi được (mất mạng) nằm lại trong private-data/host-outbox.json, lần mở sau gửi tiếp.
+    geoData.persistOutboxSync?.();
+    app.quit();
+  });
 });
 
 app.on('window-all-closed', () => app.quit());
